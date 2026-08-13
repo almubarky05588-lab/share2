@@ -2,15 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// بيانات صفحة المستخدم — الشاشة ٥ من التصميم
+/// بيانات صفحة المستخدم
 class UserProfile {
   const UserProfile({
+    required this.id,
     required this.name,
     required this.handle,
     required this.bio,
     required this.followers,
     required this.following,
     required this.posts,
+    this.avatarUrl,
     this.location,
     this.joined,
     this.verified = false,
@@ -18,20 +20,18 @@ class UserProfile {
     this.isFollowing = false,
   });
 
+  final String id;
   final String name;
   final String handle; // بدون @
   final String bio;
-  final int followers; // عدد المتابِعين
-  final int following; // عدد من يتابعهم
-  final int posts; // عدد المنشورات
+  final int followers;
+  final int following;
+  final int posts;
+  final String? avatarUrl;
   final String? location;
-  final String? joined; // انضمّت في مارس 2019
+  final String? joined;
   final bool verified;
-
-  /// يظهر وسم «يتابعك»
   final bool followsYou;
-
-  /// هل أنا متابعه حاليًا
   final bool isFollowing;
 
   String get initial => name.isEmpty ? '؟' : name.characters.first;
@@ -57,28 +57,39 @@ class UserProfile {
     return '$v ألف';
   }
 
-  UserProfile copyWith({bool? isFollowing}) => UserProfile(
-        name: name,
+  UserProfile copyWith({
+    String? name,
+    String? bio,
+    String? location,
+    String? avatarUrl,
+    bool? isFollowing,
+    int? followers,
+  }) =>
+      UserProfile(
+        id: id,
+        name: name ?? this.name,
         handle: handle,
-        bio: bio,
-        followers: followers,
+        bio: bio ?? this.bio,
+        followers: followers ?? this.followers,
         following: following,
         posts: posts,
-        location: location,
+        avatarUrl: avatarUrl ?? this.avatarUrl,
+        location: location ?? this.location,
         joined: joined,
         verified: verified,
         followsYou: followsYou,
         isFollowing: isFollowing ?? this.isFollowing,
       );
 
-  /// للربط مع Supabase لاحقًا
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
+        id: map['id']?.toString() ?? '',
         name: map['name'] as String? ?? '',
         handle: map['handle'] as String? ?? '',
         bio: map['bio'] as String? ?? '',
-        followers: map['followers'] as int? ?? 0,
-        following: map['following'] as int? ?? 0,
-        posts: map['posts'] as int? ?? 0,
+        followers: (map['followers'] as num?)?.toInt() ?? 0,
+        following: (map['following'] as num?)?.toInt() ?? 0,
+        posts: (map['posts'] as num?)?.toInt() ?? 0,
+        avatarUrl: map['avatar_url'] as String?,
         location: map['location'] as String?,
         joined: map['joined'] as String?,
         verified: map['verified'] as bool? ?? false,
