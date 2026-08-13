@@ -8,12 +8,13 @@ import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import 'avatar_circle.dart';
 
-/// بطاقة منشور — تفاعل حقيقي مع قاعدة البيانات
+/// بطاقة منشور
 class PostCard extends StatefulWidget {
   const PostCard({
     super.key,
     required this.post,
     this.onOpenProfile,
+    this.onOpenHandle,
     this.onOpenHashtag,
     this.onOpenPost,
     this.onReply,
@@ -23,6 +24,7 @@ class PostCard extends StatefulWidget {
 
   final Post post;
   final void Function(String userId)? onOpenProfile;
+  final void Function(String handle)? onOpenHandle;
   final void Function(String tag)? onOpenHashtag;
   final void Function(Post post)? onOpenPost;
   final void Function(Post post)? onReply;
@@ -43,7 +45,6 @@ class _PostCardState extends State<PostCard> {
     if (old.post.id != widget.post.id) _post = widget.post;
   }
 
-  /// المنشور المعروض فعليًا (الأصلي عند الريشير)
   Post get _shown => _post.resharedFrom ?? _post;
 
   bool get _isMine =>
@@ -115,20 +116,6 @@ class _PostCardState extends State<PostCard> {
     }
   }
 
-  Future<void> _toggleBookmark() async {
-    final target = _shown;
-    final next = !target.bookmarkedByMe;
-
-    try {
-      await SupabaseService.instance.setBookmark(target.id, next);
-      if (!mounted) return;
-      _apply(target.copyWith(bookmarkedByMe: next));
-      _snack(next ? 'أُضيف للمفضلة' : 'أُزيل من المفضلة');
-    } catch (_) {
-      _snack('تعذّر تحديث المفضلة');
-    }
-  }
-
   Future<void> _copyLink() async {
     final link = SupabaseService.instance.postLink(_shown.id);
     await Clipboard.setData(ClipboardData(text: link));
@@ -148,8 +135,8 @@ class _PostCardState extends State<PostCard> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('حذف',
-                style: TextStyle(color: AppColors.like)),
+            child:
+                const Text('حذف', style: TextStyle(color: AppColors.like)),
           ),
         ],
       ),
@@ -158,10 +145,8 @@ class _PostCardState extends State<PostCard> {
     if (ok != true) return;
 
     try {
-      // حذف الريشير يحذف نسختي فقط، لا المنشور الأصلي
-      final id = _isMyReshare && _post.resharedFrom != null
-          ? _post.id
-          : _shown.id;
+      final id =
+          _isMyReshare && _post.resharedFrom != null ? _post.id : _shown.id;
       await SupabaseService.instance.deletePost(id);
       if (!mounted) return;
       _snack('حُذف المنشور');
@@ -179,9 +164,7 @@ class _PostCardState extends State<PostCard> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text('حظر ${target.authorName}'),
-        content: const Text(
-          'لن تظهر لك منشوراته، ولن يتابع أحدكما الآخر.',
-        ),
+        content: const Text('لن تظهر لك منشوراته، ولن يتابع أحدكما الآخر.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -189,8 +172,8 @@ class _PostCardState extends State<PostCard> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('حظر',
-                style: TextStyle(color: AppColors.like)),
+            child:
+                const Text('حظر', style: TextStyle(color: AppColors.like)),
           ),
         ],
       ),
@@ -231,16 +214,6 @@ class _PostCardState extends State<PostCard> {
               ),
             ),
             const SizedBox(height: 12),
-            _menuItem(
-              ctx,
-              icon: target.bookmarkedByMe
-                  ? Icons.bookmark
-                  : Icons.bookmark_border,
-              label: target.bookmarkedByMe
-                  ? 'إزالة من المفضلة'
-                  : 'إضافة للمفضلة',
-              onTap: _toggleBookmark,
-            ),
             _menuItem(
               ctx,
               icon: Icons.link,
@@ -306,6 +279,8 @@ class _PostCardState extends State<PostCard> {
     final p = _shown;
     if (!p.hasMedia) return;
 
+    SupabaseService.instance.recordView(p.id);
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => MediaViewerScreen(
@@ -327,7 +302,12 @@ class _PostCardState extends State<PostCard> {
     final p = _shown;
 
     return InkWell(
-      onTap: widget.onOpenPost == null ? null : () => widget.onOpenPost!(p),
+      onTap: widget.onOpenPost == null
+          ? null
+          : () {
+              SupabaseService.instance.recordView(p.id);
+              widget.onOpenPost!(p);
+            },
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(
@@ -360,14 +340,14 @@ class _PostCardState extends State<PostCard> {
                     children: [
                       _header(context, p),
                       if (p.body.isNotEmpty) ...[
-                        const SizedBox(height: 7),
+                        const SizedBox(height: 6),
                         _body(context, p),
                       ],
                       if (p.hasMedia) ...[
                         const SizedBox(height: 9),
                         _media(p),
                       ],
-                      const SizedBox(height: 13),
+                      const SizedBox(height: 12),
                       _actions(context, p),
                     ],
                   ),
@@ -400,25 +380,18 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
+  /// الاسم والمعرّف والوقت يمين، والنقاط الثلاث يسار
   Widget _header(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      textDirection: TextDirection.rtl,
       children: [
-        InkWell(
-          onTap: _openMenu,
-          borderRadius: BorderRadius.circular(14),
-          child: const Padding(
-            padding: EdgeInsets.all(3),
-            child: Icon(Icons.more_horiz,
-                size: AppSizes.iconSmall, color: AppColors.textMuted),
-          ),
-        ),
         Flexible(
           child: GestureDetector(
             onTap: () => widget.onOpenProfile?.call(p.authorId),
             child: Row(
+              textDirection: TextDirection.rtl,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Flexible(
@@ -430,8 +403,7 @@ class _PostCardState extends State<PostCard> {
                 ),
                 if (p.verified) ...[
                   const SizedBox(width: 5),
-                  const Icon(Icons.verified,
-                      size: 15, color: AppColors.blue),
+                  const Icon(Icons.verified, size: 15, color: AppColors.blue),
                 ],
                 const SizedBox(width: 5),
                 Text('‎@${p.handle}', style: t.bodySmall),
@@ -443,11 +415,21 @@ class _PostCardState extends State<PostCard> {
             ),
           ),
         ),
+        const Spacer(),
+        InkWell(
+          onTap: _openMenu,
+          borderRadius: BorderRadius.circular(14),
+          child: const Padding(
+            padding: EdgeInsets.all(3),
+            child: Icon(Icons.more_horiz,
+                size: AppSizes.iconSmall, color: AppColors.textMuted),
+          ),
+        ),
       ],
     );
   }
 
-  /// نص المنشور مع تلوين المنشن والهاشتاق
+  /// نص المنشور مع منشن وهاشتاق قابلين للضغط
   Widget _body(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
@@ -471,6 +453,8 @@ class _PostCardState extends State<PostCard> {
           ..onTap = () {
             if (token.startsWith('#')) {
               widget.onOpenHashtag?.call(token.substring(1));
+            } else {
+              widget.onOpenHandle?.call(token.substring(1));
             }
           },
       ));
@@ -550,18 +534,10 @@ class _PostCardState extends State<PostCard> {
       children: [
         _action(
           context,
-          icon: Icons.mode_comment_outlined,
-          count: p.comments,
+          icon: Icons.bar_chart,
+          count: p.views,
           color: AppColors.textMuted,
-          onTap: () => widget.onReply?.call(p),
-        ),
-        _action(
-          context,
-          icon: Icons.repeat,
-          count: p.reshares,
-          color: p.resharedByMe ? AppColors.reshare : AppColors.textMuted,
-          active: p.resharedByMe,
-          onTap: _toggleReshare,
+          onTap: () {},
         ),
         _action(
           context,
@@ -573,10 +549,18 @@ class _PostCardState extends State<PostCard> {
         ),
         _action(
           context,
-          icon: p.bookmarkedByMe ? Icons.bookmark : Icons.bookmark_border,
-          count: null,
-          color: p.bookmarkedByMe ? AppColors.brand : AppColors.textMuted,
-          onTap: _toggleBookmark,
+          icon: Icons.repeat,
+          count: p.reshares,
+          color: p.resharedByMe ? AppColors.reshare : AppColors.textMuted,
+          active: p.resharedByMe,
+          onTap: _toggleReshare,
+        ),
+        _action(
+          context,
+          icon: Icons.mode_comment_outlined,
+          count: p.comments,
+          color: AppColors.textMuted,
+          onTap: () => widget.onReply?.call(p),
         ),
       ],
     );
@@ -585,7 +569,7 @@ class _PostCardState extends State<PostCard> {
   Widget _action(
     BuildContext context, {
     required IconData icon,
-    required int? count,
+    required int count,
     required Color color,
     required VoidCallback onTap,
     bool active = false,
@@ -599,14 +583,13 @@ class _PostCardState extends State<PostCard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: AppSizes.iconSmall, color: color),
-            if (count != null && count > 0) ...[
+            if (count > 0) ...[
               const SizedBox(width: 6),
               Text(
                 _format(count),
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: color,
-                      fontWeight:
-                          active ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                     ),
               ),
             ],
