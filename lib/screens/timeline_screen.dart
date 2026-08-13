@@ -23,7 +23,7 @@ class TimelineScreen extends StatefulWidget {
 }
 
 class TimelineScreenState extends State<TimelineScreen> {
-  int _tab = 0; // 0 لك · 1 المتابَعون
+  int _tab = 0;
 
   bool _loading = true;
   String? _error;
@@ -66,7 +66,7 @@ class TimelineScreenState extends State<TimelineScreen> {
         _posts = posts;
         _loading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
         _error = 'تعذّر تحميل المنشورات';
@@ -208,7 +208,6 @@ class TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  /// الصورة يمين · الشعار وسط
   Widget _header(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(right: 18, left: 18, top: 8, bottom: 10),
@@ -269,4 +268,32 @@ class TimelineScreenState extends State<TimelineScreen> {
 
     return Expanded(
       child: InkWell(
-        onTap: () =>
+        onTap: () => _switchTab(index),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: active ? AppColors.text : AppColors.textMuted,
+                    ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: 46,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: active ? AppColors.brand : Colors.transparent,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
