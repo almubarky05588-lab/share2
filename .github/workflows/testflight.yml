@@ -13,6 +13,25 @@ jobs:
       - name: سحب المستودع
         uses: actions/checkout@v4
 
+      - name: فحص توكن مستودع الشهادات
+        env:
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+        run: |
+          TOKEN=$(printf '%s' "$MATCH_GIT_TOKEN" | tr -d '[:space:]')
+          echo "طول التوكن بعد التنظيف: ${#TOKEN}"
+
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/almubarky05588-lab/share-certs)
+
+          echo "استجابة GitHub API: $CODE"
+
+          if [ "$CODE" != "200" ]; then
+            echo "❌ التوكن لا يصل للمستودع — راجع الصلاحيات أو أعد إنشاءه"
+            exit 1
+          fi
+          echo "✅ التوكن سليم"
+
       - name: تثبيت Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -28,7 +47,7 @@ jobs:
       - name: تثبيت Ruby و fastlane
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2'
+          ruby-version: '3.3'
 
       - name: تثبيت fastlane
         run: gem install fastlane --no-document
@@ -43,7 +62,8 @@ jobs:
           MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
           FASTLANE_SKIP_UPDATE_CHECK: 'true'
         run: |
-          # match يحتاج التوكن مشفَّرًا base64 بصيغة user:token
-          MATCH_GIT_BASIC_AUTHORIZATION=$(printf '%s' "x-access-token:$MATCH_GIT_TOKEN" | base64 | tr -d '\n')
+          # تنظيف التوكن من أي مسافات أو أسطر ثم تشفيره base64
+          TOKEN=$(printf '%s' "$MATCH_GIT_TOKEN" | tr -d '[:space:]')
+          MATCH_GIT_BASIC_AUTHORIZATION=$(printf '%s' "x-access-token:$TOKEN" | base64 | tr -d '[:space:]')
           export MATCH_GIT_BASIC_AUTHORIZATION
           fastlane beta
