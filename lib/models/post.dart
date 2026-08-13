@@ -18,6 +18,7 @@ class Post {
     this.comments = 0,
     this.likedByMe = false,
     this.resharedByMe = false,
+    this.bookmarkedByMe = false,
     this.mediaUrl,
     this.mediaType,
     this.replyTo,
@@ -27,7 +28,7 @@ class Post {
   final String id;
   final String authorId;
   final String authorName;
-  final String handle; // بدون @
+  final String handle;
   final String body;
   final String timeAgo;
   final String? avatarUrl;
@@ -38,6 +39,7 @@ class Post {
   final int comments;
   final bool likedByMe;
   final bool resharedByMe;
+  final bool bookmarkedByMe;
 
   final String? mediaUrl;
   final String? mediaType; // image | video
@@ -67,6 +69,7 @@ class Post {
     int? reshares,
     bool? likedByMe,
     bool? resharedByMe,
+    bool? bookmarkedByMe,
   }) =>
       Post(
         id: id,
@@ -82,6 +85,7 @@ class Post {
         comments: comments,
         likedByMe: likedByMe ?? this.likedByMe,
         resharedByMe: resharedByMe ?? this.resharedByMe,
+        bookmarkedByMe: bookmarkedByMe ?? this.bookmarkedByMe,
         mediaUrl: mediaUrl,
         mediaType: mediaType,
         replyTo: replyTo,
@@ -93,6 +97,13 @@ class Post {
     Map<String, dynamic> row, {
     required String Function(String?) formatTime,
   }) {
+    final likes = (row['like_count'] as num?)?.toInt() ?? 0;
+    final reshares = (row['reshare_count'] as num?)?.toInt() ?? 0;
+    final replies = (row['reply_count'] as num?)?.toInt() ?? 0;
+    final likedByMe = row['liked_by_me'] as bool? ?? false;
+    final resharedByMe = row['reshared_by_me'] as bool? ?? false;
+    final bookmarked = row['bookmarked_by_me'] as bool? ?? false;
+
     Post? original;
 
     if (row['reshare_of'] != null && row['original_handle'] != null) {
@@ -103,9 +114,16 @@ class Post {
         handle: row['original_handle'] as String? ?? '',
         body: row['original_body'] as String? ?? '',
         timeAgo: formatTime(row['original_created_at'] as String?),
+        avatarUrl: row['original_avatar_url'] as String?,
         verified: row['original_verified'] as bool? ?? false,
         mediaUrl: row['original_media_url'] as String?,
         mediaType: row['original_media_type'] as String?,
+        likes: likes,
+        reshares: reshares,
+        comments: replies,
+        likedByMe: likedByMe,
+        resharedByMe: resharedByMe,
+        bookmarkedByMe: bookmarked,
       );
     }
 
@@ -118,11 +136,12 @@ class Post {
       timeAgo: formatTime(row['created_at'] as String?),
       avatarUrl: row['avatar_url'] as String?,
       verified: row['verified'] as bool? ?? false,
-      likes: (row['like_count'] as num?)?.toInt() ?? 0,
-      reshares: (row['reshare_count'] as num?)?.toInt() ?? 0,
-      comments: (row['reply_count'] as num?)?.toInt() ?? 0,
-      likedByMe: row['liked_by_me'] as bool? ?? false,
-      resharedByMe: row['reshared_by_me'] as bool? ?? false,
+      likes: likes,
+      reshares: reshares,
+      comments: replies,
+      likedByMe: likedByMe,
+      resharedByMe: resharedByMe,
+      bookmarkedByMe: bookmarked,
       mediaUrl: row['media_url'] as String?,
       mediaType: row['media_type'] as String?,
       replyTo: row['reply_to']?.toString(),
