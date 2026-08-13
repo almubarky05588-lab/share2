@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
 import 'auth_screen.dart';
+import 'chat_screen.dart';
 import 'compose_screen.dart';
 import 'hashtag_screen.dart';
 import 'post_detail_screen.dart';
@@ -28,7 +29,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   List<Post> _posts = const [];
   bool _loading = true;
   bool _busy = false;
-  int _tab = 0; // 0 المنشورات · 1 المفضلة
+  int _tab = 0;
 
   bool get _isMe {
     final me = SupabaseService.instance.currentUserId;
@@ -79,6 +80,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (_tab == i) return;
     setState(() => _tab = i);
     _load();
+  }
+
+  Future<void> _openChat() async {
+    final p = _profile;
+    if (p == null || _busy) return;
+
+    setState(() => _busy = true);
+
+    try {
+      final cid =
+          await SupabaseService.instance.openConversationWith(p.id);
+      if (!mounted) return;
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            conversationId: cid,
+            otherUserId: p.id,
+            name: p.name,
+            handle: p.handle,
+            avatarUrl: p.avatarUrl,
+            verified: p.verified,
+          ),
+        ),
+      );
+    } catch (_) {
+      _snack('تعذّر فتح المحادثة');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _toggleFollow() async {
@@ -276,7 +307,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// لافتة الحظر بدل المنشورات
   Widget _blockedNotice(BuildContext context, UserProfile p) {
     final t = Theme.of(context).textTheme;
     final iBlocked = p.isBlocked;
@@ -412,22 +442,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // الاسم كامل بلا اقتطاع — يلتف لسطرين عند الحاجة
             Row(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Flexible(
                   child: Text(
                     p.name,
-                    overflow: TextOverflow.ellipsis,
                     style: t.titleMedium?.copyWith(
                       fontSize: 23,
                       fontWeight: FontWeight.w800,
+                      height: 1.35,
                     ),
                   ),
                 ),
                 if (p.verified) ...[
                   const SizedBox(width: 6),
-                  const Icon(Icons.verified, size: 19, color: AppColors.blue),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Icon(Icons.verified,
+                        size: 19, color: AppColors.blue),
+                  ),
                 ],
               ],
             ),
@@ -516,7 +551,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: _outlinedButton(context, 'رسالة', onTap: () {}),
+              child: _outlinedButton(context, 'رسالة', onTap: _openChat),
             ),
           ],
         ],
