@@ -8,7 +8,10 @@ import '../widgets/share_bottom_nav.dart';
 
 /// التايم لاين — الشاشة ١ من التصميم
 class TimelineScreen extends StatefulWidget {
-  const TimelineScreen({super.key});
+  const TimelineScreen({super.key, this.showChrome = true});
+
+  /// false عند العرض داخل AppShell — الشريط وزر share يأتيان من الهيكل
+  final bool showChrome;
 
   @override
   State<TimelineScreen> createState() => _TimelineScreenState();
@@ -88,8 +91,9 @@ class _TimelineScreenState extends State<TimelineScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: const ShareBottomNav(currentIndex: 0),
-      floatingActionButton: _shareButton(context),
+      bottomNavigationBar:
+          widget.showChrome ? const ShareBottomNav(currentIndex: 0) : null,
+      floatingActionButton: widget.showChrome ? _shareButton(context) : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
