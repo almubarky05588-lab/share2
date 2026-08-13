@@ -27,8 +27,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _uploadingAvatar = false;
+  bool _uploadingCover = false;
   bool _changed = false;
   String? _avatarUrl;
+  String? _coverUrl;
 
   @override
   void initState() {
@@ -53,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _profile = p;
       _avatarUrl = p?.avatarUrl;
+      _coverUrl = p?.coverUrl;
       _name.text = p?.name ?? '';
       _handle.text = p?.handle ?? '';
       _bio.text = p?.bio ?? '';
@@ -87,6 +90,34 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _snack('تعذّر رفع الصورة');
     } finally {
       if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
+  Future<void> _pickCover() async {
+    if (_uploadingCover) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+
+    setState(() => _uploadingCover = true);
+
+    try {
+      final url =
+          await SupabaseService.instance.uploadCover(File(picked.path));
+      if (!mounted) return;
+      setState(() {
+        _coverUrl = url;
+        _changed = true;
+      });
+      _snack('تم تحديث الغلاف');
+    } catch (_) {
+      _snack('تعذّر رفع الغلاف');
+    } finally {
+      if (mounted) setState(() => _uploadingCover = false);
     }
   }
 
@@ -152,9 +183,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               controller: controller,
               keyboardType: TextInputType.emailAddress,
               textDirection: TextDirection.ltr,
-              decoration: const InputDecoration(
-                hintText: 'البريد الجديد',
-              ),
+              decoration: const InputDecoration(hintText: 'البريد الجديد'),
             ),
             const SizedBox(height: 12),
             Text(
@@ -214,34 +243,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 children: blocked
                     .map(
-                      (u) => ListTile(
-                        trailing: AvatarCircle(
-                          initial: u.initial,
-                          seed: u.avatarSeed,
-                          imageUrl: u.avatarUrl,
-                          size: 40,
-                        ),
-                        title: Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            u.name,
-                            style: Theme.of(context).textTheme.titleMedium,
+                      (u) => Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          child: Row(
+                            children: [
+                              AvatarCircle(
+                                initial: u.initial,
+                                seed: u.avatarSeed,
+                                imageUrl: u.avatarUrl,
+                                size: 42,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(u.name,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(fontSize: 15)),
+                                    Text('‎@${u.handle}',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall),
+                                  ],
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  await SupabaseService.instance
+                                      .setBlock(u.id, false);
+                                  if (!ctx.mounted) return;
+                                  Navigator.of(ctx).pop();
+                                  _snack('أُلغي حظر ${u.name}');
+                                },
+                                child: const Text('إلغاء الحظر'),
+                              ),
+                            ],
                           ),
-                        ),
-                        subtitle: Align(
-                          alignment: Alignment.centerRight,
-                          child: Text('‎@${u.handle}',
-                              style: Theme.of(context).textTheme.bodySmall),
-                        ),
-                        leading: TextButton(
-                          onPressed: () async {
-                            await SupabaseService.instance
-                                .setBlock(u.id, false);
-                            if (!ctx.mounted) return;
-                            Navigator.of(ctx).pop();
-                            _snack('أُلغي حظر ${u.name}');
-                          },
-                          child: const Text('إلغاء الحظر'),
                         ),
                       ),
                     )
@@ -264,8 +308,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('خروج',
-                style: TextStyle(color: AppColors.like)),
+            child:
+                const Text('خروج', style: TextStyle(color: AppColors.like)),
           ),
         ],
       ),
@@ -303,124 +347,183 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: CircularProgressIndicator(color: AppColors.brand),
             )
           : ListView(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 40),
+              padding: EdgeInsets.zero,
               children: [
-                Center(
-                  child: Stack(
-                    alignment: Alignment.bottomLeft,
+                _coverAndAvatar(context, p),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                  child: Column(
                     children: [
-                      AvatarCircle(
-                        initial: p?.initial ?? '؟',
-                        seed: p?.avatarSeed ?? AppColors.brand,
-                        imageUrl: _avatarUrl,
-                        size: 96,
+                      _label(context, 'الاسم'),
+                      _field(_name, 'اسمك الظاهر'),
+                      const SizedBox(height: 16),
+                      _label(context, 'المعرّف'),
+                      _field(_handle, 'بدون @',
+                          direction: TextDirection.ltr),
+                      const SizedBox(height: 16),
+                      _label(context, 'النبذة'),
+                      _field(_bio, 'اكتب نبذة قصيرة عنك', maxLines: 3),
+                      const SizedBox(height: 16),
+                      _label(context, 'الموقع'),
+                      _field(_location, 'المدينة، الدولة'),
+                      const SizedBox(height: 16),
+                      _label(context, 'الموقع الإلكتروني'),
+                      _field(
+                        _website,
+                        'example.com',
+                        direction: TextDirection.ltr,
+                        keyboardType: TextInputType.url,
                       ),
+                      const SizedBox(height: 28),
                       Material(
                         color: AppColors.brand,
-                        shape: const CircleBorder(),
+                        borderRadius: BorderRadius.circular(26),
                         child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: _pickAvatar,
-                          child: SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: _uploadingAvatar
-                                ? const Padding(
-                                    padding: EdgeInsets.all(8),
+                          borderRadius: BorderRadius.circular(26),
+                          onTap: _saving ? null : _save,
+                          child: Container(
+                            height: 50,
+                            alignment: Alignment.center,
+                            child: _saving
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                       color: AppColors.background,
                                     ),
                                   )
-                                : const Icon(Icons.camera_alt,
-                                    size: 17,
-                                    color: AppColors.background),
+                                : const Text(
+                                    'حفظ التغييرات',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.background,
+                                    ),
+                                  ),
                           ),
                         ),
+                      ),
+                      const SizedBox(height: 26),
+                      const Divider(color: AppColors.border),
+                      _rowItem(
+                        context,
+                        icon: Icons.mail_outline,
+                        label: 'تغيير البريد',
+                        value: SupabaseService.instance.currentEmail,
+                        onTap: _changeEmail,
+                      ),
+                      const Divider(color: AppColors.border),
+                      _rowItem(
+                        context,
+                        icon: Icons.block,
+                        label: 'الحسابات المحظورة',
+                        onTap: _openBlocked,
+                      ),
+                      const Divider(color: AppColors.border),
+                      _rowItem(
+                        context,
+                        icon: Icons.logout,
+                        label: 'تسجيل الخروج',
+                        color: AppColors.like,
+                        onTap: _signOut,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 26),
-                _label(context, 'الاسم'),
-                _field(_name, 'اسمك الظاهر'),
-                const SizedBox(height: 16),
-                _label(context, 'المعرّف'),
-                _field(
-                  _handle,
-                  'بدون @',
-                  direction: TextDirection.ltr,
+              ],
+            ),
+    );
+  }
+
+  /// الغلاف مع الصورة الشخصية فوقه
+  Widget _coverAndAvatar(BuildContext context, UserProfile? p) {
+    return SizedBox(
+      height: 130 + 44,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: _pickCover,
+            child: Container(
+              height: 130,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                gradient: _coverUrl == null ? AppTheme.brandGradient : null,
+                image: _coverUrl == null
+                    ? null
+                    : DecorationImage(
+                        image: NetworkImage(_coverUrl!),
+                        fit: BoxFit.cover,
+                      ),
+              ),
+              alignment: Alignment.center,
+              child: Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.45),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 16),
-                _label(context, 'النبذة'),
-                _field(_bio, 'اكتب نبذة قصيرة عنك', maxLines: 3),
-                const SizedBox(height: 16),
-                _label(context, 'الموقع'),
-                _field(_location, 'المدينة، الدولة'),
-                const SizedBox(height: 16),
-                _label(context, 'الموقع الإلكتروني'),
-                _field(
-                  _website,
-                  'example.com',
-                  direction: TextDirection.ltr,
-                  keyboardType: TextInputType.url,
+                child: _uploadingCover
+                    ? const Padding(
+                        padding: EdgeInsets.all(11),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.photo_camera_outlined,
+                        color: Colors.white, size: 21),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 130 - 44,
+            right: 20,
+            child: Stack(
+              alignment: Alignment.bottomLeft,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: AppColors.background,
+                    shape: BoxShape.circle,
+                  ),
+                  child: AvatarCircle(
+                    initial: p?.initial ?? '؟',
+                    seed: p?.avatarSeed ?? AppColors.brand,
+                    imageUrl: _avatarUrl,
+                    size: 84,
+                  ),
                 ),
-                const SizedBox(height: 28),
                 Material(
                   color: AppColors.brand,
-                  borderRadius: BorderRadius.circular(26),
+                  shape: const CircleBorder(),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(26),
-                    onTap: _saving ? null : _save,
-                    child: Container(
-                      height: 50,
-                      alignment: Alignment.center,
-                      child: _saving
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
+                    customBorder: const CircleBorder(),
+                    onTap: _pickAvatar,
+                    child: SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: _uploadingAvatar
+                          ? const Padding(
+                              padding: EdgeInsets.all(8),
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
                                 color: AppColors.background,
                               ),
                             )
-                          : const Text(
-                              'حفظ التغييرات',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.background,
-                              ),
-                            ),
+                          : const Icon(Icons.camera_alt,
+                              size: 16, color: AppColors.background),
                     ),
                   ),
                 ),
-                const SizedBox(height: 26),
-                const Divider(color: AppColors.border),
-                _rowItem(
-                  context,
-                  icon: Icons.mail_outline,
-                  label: 'تغيير البريد',
-                  value: SupabaseService.instance.currentEmail,
-                  onTap: _changeEmail,
-                ),
-                const Divider(color: AppColors.border),
-                _rowItem(
-                  context,
-                  icon: Icons.block,
-                  label: 'الحسابات المحظورة',
-                  onTap: _openBlocked,
-                ),
-                const Divider(color: AppColors.border),
-                _rowItem(
-                  context,
-                  icon: Icons.logout,
-                  label: 'تسجيل الخروج',
-                  color: AppColors.like,
-                  onTap: _signOut,
-                ),
               ],
             ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -437,8 +540,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 15),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          textDirection: TextDirection.rtl,
           children: [
+            Icon(icon, size: 19, color: color),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontSize: 15, color: color),
+            ),
+            const Spacer(),
             if (value != null)
               Flexible(
                 child: Text(
@@ -447,23 +560,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   textDirection: TextDirection.ltr,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-              )
-            else
-              const SizedBox.shrink(),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontSize: 15, color: color),
-                ),
-                const SizedBox(width: 10),
-                Icon(icon, size: 19, color: color),
-              ],
-            ),
+              ),
           ],
         ),
       ),
