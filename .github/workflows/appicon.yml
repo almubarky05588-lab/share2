@@ -1,0 +1,110 @@
+name: App Icon
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  icons:
+    name: توليد أيقونات التطبيق
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: سحب المستودع
+        uses: actions/checkout@v4
+
+      - name: تثبيت Pillow
+        run: pip install --quiet Pillow
+
+      - name: توليد الأيقونات
+        run: |
+          python - <<'PY'
+          from PIL import Image
+          import json, os
+
+          SRC = 'assets/IMG_7265.png'
+          OUT = 'ios/Runner/Assets.xcassets/AppIcon.appiconset'
+
+          img = Image.open(SRC).convert('RGBA')
+
+          # خلفية بيضاء صلبة — Apple ترفض الشفافية
+          bg = Image.new('RGBA', img.size, (255, 255, 255, 255))
+          bg.alpha_composite(img)
+          img = bg.convert('RGB')
+
+          # قصّها مربّعة من المنتصف
+          w, h = img.size
+          side = min(w, h)
+          img = img.crop((
+              (w - side) // 2,
+              (h - side) // 2,
+              (w - side) // 2 + side,
+              (h - side) // 2 + side,
+          ))
+
+          # المقاسات المطلوبة لـ iOS
+          sizes = [
+              (20, 1), (20, 2), (20, 3),
+              (29, 1), (29, 2), (29, 3),
+              (40, 1), (40, 2), (40, 3),
+              (60, 2), (60, 3),
+              (76, 1), (76, 2),
+              (83.5, 2),
+              (1024, 1),
+          ]
+
+          os.makedirs(OUT, exist_ok=True)
+
+          images = []
+          for pt, scale in sizes:
+              px = int(round(pt * scale))
+              name = f'Icon-App-{pt:g}x{pt:g}@{scale}x.png'
+              img.resize((px, px), Image.LANCZOS).save(
+                  os.path.join(OUT, name), 'PNG'
+              )
+
+              if pt == 1024:
+                  images.append({
+                      'size': '1024x1024',
+                      'idiom': 'ios-marketing',
+                      'filename': name,
+                      'scale': '1x',
+                  })
+              else:
+                  for idiom in ('iphone', 'ipad'):
+                      images.append({
+                          'size': f'{pt:g}x{pt:g}',
+                          'idiom': idiom,
+                          'filename': name,
+                          'scale': f'{scale}x',
+                      })
+
+          # إزالة التكرارات غير الصالحة
+          valid = []
+          seen = set()
+          for e in images:
+              key = (e['size'], e['idiom'], e['scale'])
+              if key in seen:
+                  continue
+              seen.add(key)
+              valid.append(e)
+
+          with open(os.path.join(OUT, 'Contents.json'), 'w') as f:
+              json.dump(
+                  {'images': valid, 'info': {'version': 1, 'author': 'xcode'}},
+                  f,
+                  indent=2,
+              )
+
+          print(f'تم توليد {len(sizes)} أيقونة')
+          PY
+
+      - name: حفظ الأيقونات في المستودع
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A ios/Runner/Assets.xcassets/AppIcon.appiconset
+          git diff --staged --quiet || git commit -m "توليد أيقونات التطبيق من الشعار"
+          git push
