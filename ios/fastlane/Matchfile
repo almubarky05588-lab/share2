@@ -1,0 +1,14 @@
+# مستودع الشهادات المشفّرة
+git_url("https://github.com/almubarky05588-lab/share-certs")
+storage_mode("git")
+git_branch("main")
+
+# شهادة توزيع للـ App Store و TestFlight
+type("appstore")
+
+app_identifier(["sa.almubarky.shareApp"])
+team_id("5V6TC85KRL")
+
+# ينشئ الشهادة مرة واحدة فقط ثم يعيد استخدامها من المستودع —
+# هذا ما يمنع تراكم الشهادات وفشل الرفع الثالث
+readonly(false)
