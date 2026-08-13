@@ -136,8 +136,8 @@ class _PostCardState extends State<PostCard> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child:
-                const Text('حذف', style: TextStyle(color: AppColors.like)),
+            child: const Text('حذف',
+                style: TextStyle(color: AppColors.like)),
           ),
         ],
       ),
@@ -174,8 +174,8 @@ class _PostCardState extends State<PostCard> {
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child:
-                const Text('حظر', style: TextStyle(color: AppColors.like)),
+            child: const Text('حظر',
+                style: TextStyle(color: AppColors.like)),
           ),
         ],
       ),
@@ -382,7 +382,6 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  /// الاسم واليوزر والوقت يمين — يلتفّون لسطر ثانٍ بدل الاقتطاع
   Widget _header(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
@@ -506,7 +505,6 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  /// من اليمين: الرد · إعادة النشر · المفضلة · المشاهدات
   Widget _actions(BuildContext context, Post p) {
     return Row(
       textDirection: TextDirection.rtl,
@@ -581,4 +579,8 @@ class _PostCardState extends State<PostCard> {
   }
 
   static String _format(int n) {
-    if (n
+    if (n < 1000) return '$n';
+    final v = (n / 1000).toStringAsFixed(1).replaceAll('.0', '');
+    return '$v ألف';
+  }
+}
