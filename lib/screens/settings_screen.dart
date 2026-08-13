@@ -18,8 +18,10 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _name = TextEditingController();
+  final _handle = TextEditingController();
   final _bio = TextEditingController();
   final _location = TextEditingController();
+  final _website = TextEditingController();
 
   UserProfile? _profile;
   bool _loading = true;
@@ -37,8 +39,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _name.dispose();
+    _handle.dispose();
     _bio.dispose();
     _location.dispose();
+    _website.dispose();
     super.dispose();
   }
 
@@ -50,8 +54,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _profile = p;
       _avatarUrl = p?.avatarUrl;
       _name.text = p?.name ?? '';
+      _handle.text = p?.handle ?? '';
       _bio.text = p?.bio ?? '';
       _location.text = p?.location ?? '';
+      _website.text = p?.website ?? '';
       _loading = false;
     });
   }
@@ -88,19 +94,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (_saving) return;
 
     final name = _name.text.trim();
+    final handle = _handle.text.trim().replaceAll('@', '').toLowerCase();
+
     if (name.isEmpty) {
       _snack('الاسم لا يمكن أن يكون فارغًا');
+      return;
+    }
+
+    if (!RegExp(r'^[a-zA-Z0-9._]{3,20}$').hasMatch(handle)) {
+      _snack('المعرّف: حروف إنجليزية وأرقام و . _ فقط، من 3 إلى 20');
       return;
     }
 
     setState(() => _saving = true);
 
     try {
+      if (handle != _profile?.handle) {
+        final free = await SupabaseService.instance.isHandleAvailable(handle);
+        if (!free) {
+          _snack('المعرّف محجوز، اختر غيره');
+          setState(() => _saving = false);
+          return;
+        }
+      }
+
       await SupabaseService.instance.updateProfile(
         name: name,
+        handle: handle,
         bio: _bio.text.trim(),
         location: _location.text.trim(),
+        website: _website.text.trim(),
       );
+
       if (!mounted) return;
       _changed = true;
       _snack('تم الحفظ');
@@ -110,6 +135,120 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _changeEmail() async {
+    final controller =
+        TextEditingController(text: SupabaseService.instance.currentEmail);
+
+    final newEmail = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تغيير البريد'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.emailAddress,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(
+                hintText: 'البريد الجديد',
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'ستصلك رسالة تأكيد على البريد الجديد، ولن يتغيّر قبل تأكيدها.',
+              style: Theme.of(context).textTheme.bodySmall,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('إرسال'),
+          ),
+        ],
+      ),
+    );
+
+    if (newEmail == null || newEmail.isEmpty) return;
+    if (newEmail == SupabaseService.instance.currentEmail) return;
+
+    try {
+      await SupabaseService.instance.changeEmail(newEmail);
+      _snack('أُرسلت رسالة التأكيد إلى $newEmail');
+    } catch (_) {
+      _snack('تعذّر تغيير البريد');
+    }
+  }
+
+  Future<void> _openBlocked() async {
+    final blocked = await SupabaseService.instance.fetchBlockedUsers();
+    if (!mounted) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: blocked.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.all(34),
+                child: Center(
+                  child: Text(
+                    'لا يوجد محظورون',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              )
+            : ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                children: blocked
+                    .map(
+                      (u) => ListTile(
+                        trailing: AvatarCircle(
+                          initial: u.initial,
+                          seed: u.avatarSeed,
+                          imageUrl: u.avatarUrl,
+                          size: 40,
+                        ),
+                        title: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            u.name,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        subtitle: Align(
+                          alignment: Alignment.centerRight,
+                          child: Text('‎@${u.handle}',
+                              style: Theme.of(context).textTheme.bodySmall),
+                        ),
+                        leading: TextButton(
+                          onPressed: () async {
+                            await SupabaseService.instance
+                                .setBlock(u.id, false);
+                            if (!ctx.mounted) return;
+                            Navigator.of(ctx).pop();
+                            _snack('أُلغي حظر ${u.name}');
+                          },
+                          child: const Text('إلغاء الحظر'),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+      ),
+    );
   }
 
   Future<void> _signOut() async {
@@ -202,22 +341,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                Center(
-                  child: Text(
-                    '‎@${p?.handle ?? ''}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
                 const SizedBox(height: 26),
                 _label(context, 'الاسم'),
                 _field(_name, 'اسمك الظاهر'),
+                const SizedBox(height: 16),
+                _label(context, 'المعرّف'),
+                _field(
+                  _handle,
+                  'بدون @',
+                  direction: TextDirection.ltr,
+                ),
                 const SizedBox(height: 16),
                 _label(context, 'النبذة'),
                 _field(_bio, 'اكتب نبذة قصيرة عنك', maxLines: 3),
                 const SizedBox(height: 16),
                 _label(context, 'الموقع'),
                 _field(_location, 'المدينة، الدولة'),
+                const SizedBox(height: 16),
+                _label(context, 'الموقع الإلكتروني'),
+                _field(
+                  _website,
+                  'example.com',
+                  direction: TextDirection.ltr,
+                  keyboardType: TextInputType.url,
+                ),
                 const SizedBox(height: 28),
                 Material(
                   color: AppColors.brand,
@@ -248,32 +395,78 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 26),
                 const Divider(color: AppColors.border),
-                const SizedBox(height: 10),
-                InkWell(
+                _rowItem(
+                  context,
+                  icon: Icons.mail_outline,
+                  label: 'تغيير البريد',
+                  value: SupabaseService.instance.currentEmail,
+                  onTap: _changeEmail,
+                ),
+                const Divider(color: AppColors.border),
+                _rowItem(
+                  context,
+                  icon: Icons.block,
+                  label: 'الحسابات المحظورة',
+                  onTap: _openBlocked,
+                ),
+                const Divider(color: AppColors.border),
+                _rowItem(
+                  context,
+                  icon: Icons.logout,
+                  label: 'تسجيل الخروج',
+                  color: AppColors.like,
                   onTap: _signOut,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Text(
-                          'تسجيل الخروج',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(color: AppColors.like),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.logout,
-                            size: 19, color: AppColors.like),
-                      ],
-                    ),
-                  ),
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _rowItem(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    String? value,
+    Color color = AppColors.text,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 15),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            if (value != null)
+              Flexible(
+                child: Text(
+                  value,
+                  overflow: TextOverflow.ellipsis,
+                  textDirection: TextDirection.ltr,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              )
+            else
+              const SizedBox.shrink(),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontSize: 15, color: color),
+                ),
+                const SizedBox(width: 10),
+                Icon(icon, size: 19, color: color),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -297,6 +490,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     TextEditingController controller,
     String hint, {
     int maxLines = 1,
+    TextDirection direction = TextDirection.rtl,
+    TextInputType? keyboardType,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -307,7 +502,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        textDirection: direction,
         textAlign: TextAlign.right,
+        keyboardType: keyboardType,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 15),
         decoration: InputDecoration(
           border: InputBorder.none,
