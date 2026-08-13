@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/post.dart';
 import '../services/supabase_service.dart';
@@ -31,11 +32,32 @@ class TimelineScreenState extends State<TimelineScreen> {
   String? _myAvatar;
   String _myInitial = 'م';
 
+  final _scroll = ScrollController();
+  RealtimeChannel? _channel;
+  DateTime _lastLoaded = DateTime.now();
+  int _pending = 0;
+
   @override
   void initState() {
     super.initState();
     _load();
     _loadMe();
+    _channel = SupabaseService.instance.watchNewPosts(_onNewPost);
+  }
+
+  @override
+  void dispose() {
+    final c = _channel;
+    if (c != null) SupabaseService.instance.unwatch(c);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Future<void> _onNewPost() async {
+    final n = await SupabaseService.instance
+        .countPostsSince(_lastLoaded, followingOnly: _tab == 1);
+    if (!mounted || n <= 0) return;
+    setState(() => _pending = n);
   }
 
   Future<void> refresh() async {
@@ -65,6 +87,8 @@ class TimelineScreenState extends State<TimelineScreen> {
       setState(() {
         _posts = posts;
         _loading = false;
+        _pending = 0;
+        _lastLoaded = DateTime.now();
       });
     } catch (_) {
       if (!mounted) return;
@@ -73,6 +97,16 @@ class TimelineScreenState extends State<TimelineScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _showNew() async {
+    await _load();
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
   }
 
   void _switchTab(int index) {
@@ -133,12 +167,60 @@ class TimelineScreenState extends State<TimelineScreen> {
           children: [
             _header(context),
             _tabs(context),
-            Expanded(child: _body(context)),
+            Expanded(
+              child: Stack(
+                alignment: Alignment.topCenter,
+                children: [
+                  _body(context),
+                  if (_pending > 0) _newPostsPill(context),
+                ],
+              ),
+            ),
           ],
         ),
       ),
       bottomNavigationBar:
           widget.showChrome ? const ShareBottomNav(currentIndex: 0) : null,
+    );
+  }
+
+  /// شريط «منشورات جديدة»
+  Widget _newPostsPill(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Material(
+        color: AppColors.brand,
+        borderRadius: BorderRadius.circular(20),
+        elevation: 3,
+        shadowColor: AppColors.brand.withOpacity(0.4),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: _showNew,
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.arrow_upward,
+                    size: 15, color: AppColors.background),
+                const SizedBox(width: 7),
+                Text(
+                  _pending == 1
+                      ? 'منشور جديد'
+                      : '$_pending منشورات جديدة',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    height: 1.6,
+                    color: AppColors.background,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -161,6 +243,7 @@ class TimelineScreenState extends State<TimelineScreen> {
                       : 'لا توجد منشورات بعد — اكتب أول منشور',
                 )
               : ListView.builder(
+                  controller: _scroll,
                   padding: EdgeInsets.zero,
                   physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: _posts.length,
