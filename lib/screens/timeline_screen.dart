@@ -6,13 +6,14 @@ import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
 import '../widgets/share_bottom_nav.dart';
-import 'auth_screen.dart';
+import 'hashtag_screen.dart';
+import 'post_detail_screen.dart';
+import 'profile_screen.dart';
 
-/// التايم لاين — الشاشة ١ من التصميم
+/// التايم لاين — الشاشة الرئيسية
 class TimelineScreen extends StatefulWidget {
   const TimelineScreen({super.key, this.showChrome = true});
 
-  /// false عند العرض داخل AppShell — الشريط وزر share يأتيان من الهيكل
   final bool showChrome;
 
   @override
@@ -25,15 +26,26 @@ class TimelineScreenState extends State<TimelineScreen> {
   bool _loading = true;
   String? _error;
   List<Post> _posts = const [];
+  String? _myAvatar;
+  String _myInitial = 'م';
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadMe();
   }
 
-  /// يمكن استدعاؤها من الخارج بعد نشر منشور جديد
   Future<void> refresh() => _load();
+
+  Future<void> _loadMe() async {
+    final me = await SupabaseService.instance.fetchMyProfile();
+    if (!mounted || me == null) return;
+    setState(() {
+      _myAvatar = me.avatarUrl;
+      _myInitial = me.initial;
+    });
+  }
 
   Future<void> _load() async {
     setState(() {
@@ -64,13 +76,29 @@ class TimelineScreenState extends State<TimelineScreen> {
     _load();
   }
 
-  Future<void> _signOut() async {
-    await SupabaseService.instance.signOut();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const AuthScreen()),
-      (_) => false,
+  void _openProfile(String userId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ProfileScreen(userId: userId)),
     );
+  }
+
+  void _openMyProfile() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+    );
+  }
+
+  void _openHashtag(String tag) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => HashtagScreen(tag: tag)),
+    );
+  }
+
+  Future<void> _openPost(Post post) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+    );
+    _load();
   }
 
   @override
@@ -99,45 +127,61 @@ class TimelineScreenState extends State<TimelineScreen> {
       );
     }
 
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_error!, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 10),
-            TextButton(
-              onPressed: _load,
-              child: const Text(
-                'إعادة المحاولة',
-                style: TextStyle(color: AppColors.brand),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_posts.isEmpty) {
-      return Center(
-        child: Text(
-          _tab == 1
-              ? 'لا توجد منشورات ممن تتابعهم بعد'
-              : 'لا توجد منشورات بعد — اكتب أول منشور',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      );
-    }
-
     return RefreshIndicator(
       color: AppColors.brand,
       onRefresh: _load,
-      child: ListView.builder(
-        padding: EdgeInsets.zero,
-        itemCount: _posts.length,
-        itemBuilder: (_, i) => PostCard(post: _posts[i]),
-      ),
+      child: _error != null
+          ? _messageList(_error!, retry: true)
+          : _posts.isEmpty
+              ? _messageList(
+                  _tab == 1
+                      ? 'لا توجد منشورات ممن تتابعهم بعد'
+                      : 'لا توجد منشورات بعد — اكتب أول منشور',
+                )
+              : ListView.builder(
+                  padding: EdgeInsets.zero,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  itemCount: _posts.length,
+                  itemBuilder: (_, i) => PostCard(
+                    post: _posts[i],
+                    onOpenProfile: _openProfile,
+                    onOpenHashtag: _openHashtag,
+                    onOpenPost: _openPost,
+                    onReply: _openPost,
+                    onChanged: _load,
+                  ),
+                ),
+    );
+  }
+
+  /// رسالة قابلة للسحب حتى يعمل التحديث حتى مع القائمة الفارغة
+  Widget _messageList(String text, {bool retry = false}) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+        Center(
+          child: Column(
+            children: [
+              Text(
+                text,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (retry) ...[
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _load,
+                  child: const Text(
+                    'إعادة المحاولة',
+                    style: TextStyle(color: AppColors.brand),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -147,21 +191,14 @@ class TimelineScreenState extends State<TimelineScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          InkWell(
-            onTap: _signOut,
-            child: const AvatarCircle(
-              initial: 'م',
-              seed: AppColors.brand,
-              size: 34,
-              flat: true,
-            ),
-          ),
+          // مساحة موازنة بدل زر التحديث المحذوف
+          const SizedBox(width: 34),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 27,
-                height: 27,
+                width: 28,
+                height: 28,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: AppColors.brand,
@@ -170,29 +207,31 @@ class TimelineScreenState extends State<TimelineScreen> {
                 child: const Text(
                   'S',
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: FontWeight.w900,
                     color: AppColors.background,
                   ),
                 ),
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 8),
               Text(
-                'شارِك',
+                'share',
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontSize: 20,
+                      fontSize: 21,
                       fontWeight: FontWeight.w900,
                       color: AppColors.brand,
                     ),
               ),
             ],
           ),
-          InkWell(
-            onTap: _load,
-            child: const Icon(
-              Icons.refresh,
-              size: 22,
-              color: AppColors.text,
+          GestureDetector(
+            onTap: _openMyProfile,
+            child: AvatarCircle(
+              initial: _myInitial,
+              seed: AppColors.brand,
+              imageUrl: _myAvatar,
+              size: 34,
+              flat: true,
             ),
           ),
         ],
