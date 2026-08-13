@@ -2,15 +2,26 @@ import 'package:flutter/material.dart';
 
 import '../models/post.dart';
 import '../models/user_profile.dart';
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
 import '../widgets/share_bottom_nav.dart';
+import 'auth_screen.dart';
+import 'hashtag_screen.dart';
+import 'post_detail_screen.dart';
+import 'settings_screen.dart';
 
-/// صفحة المستخدم — الشاشة ٥ من التصميم
+/// صفحة المستخدم — بدون userId تعرض ملفي أنا
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key, this.showBottomNav = true});
+  const ProfileScreen({
+    super.key,
+    this.userId,
+    this.showBottomNav = false,
+  });
 
+  /// null = ملفي أنا
+  final String? userId;
   final bool showBottomNav;
 
   @override
@@ -18,74 +29,165 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  int _tab = 0; // 0 المنشورات · 1 الردود · 2 الوسائط · 3 الإعجابات
+  UserProfile? _profile;
+  List<Post> _posts = const [];
+  bool _loading = true;
+  bool _busy = false;
 
-  // مؤقت — يُستبدل بجلب من Supabase
-  UserProfile _profile = const UserProfile(
-    name: 'نورة السالم',
-    handle: 'noura_s',
-    verified: true,
-    followsYou: true,
-    bio: 'مصمّمة واجهات · أكتب عن التصميم العربي وتفاصيله الصغيرة.',
-    followers: 18400,
-    following: 1240,
-    posts: 342,
-    location: 'الرياض، السعودية',
-    joined: 'انضمّت في مارس 2019',
-  );
+  bool get _isMe {
+    final me = SupabaseService.instance.currentUserId;
+    return widget.userId == null || widget.userId == me;
+  }
 
-  static const _posts = <Post>[
-    Post(
-      id: 'p1',
-      authorName: 'نورة السالم',
-      handle: 'noura_s',
-      verified: true,
-      timeAgo: '2س',
-      body:
-          'ثلاث سنوات وأنا أبحث عن تطبيق عربي يحترم اتجاه الكتابة من اليمين لليسار… قررت أخيرًا أبنيه بنفسي.',
-      likes: 910,
-      reshares: 128,
-      comments: 42,
-    ),
-    Post(
-      id: 'p2',
-      authorName: 'نورة السالم',
-      handle: 'noura_s',
-      verified: true,
-      timeAgo: 'أمس',
-      body:
-          'قاعدة بسيطة: إذا كان النص العربي يبدو مزدحمًا، المشكلة غالبًا في تباعد الأسطر لا في حجم الخط.',
-      likes: 640,
-      reshares: 96,
-      comments: 21,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  void _toggleFollow() {
-    setState(() {
-      _profile = _profile.copyWith(isFollowing: !_profile.isFollowing);
-    });
+  Future<void> _load() async {
+    setState(() => _loading = true);
+
+    try {
+      final service = SupabaseService.instance;
+      final id = widget.userId ?? service.currentUserId;
+      if (id == null) {
+        setState(() => _loading = false);
+        return;
+      }
+
+      final profile = await service.fetchProfile(id);
+      final posts = await service.fetchUserPosts(id);
+
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _posts = posts;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _toggleFollow() async {
+    final p = _profile;
+    if (p == null || _busy) return;
+
+    setState(() => _busy = true);
+    final next = !p.isFollowing;
+
+    try {
+      await SupabaseService.instance.setFollow(p.id, next);
+      if (!mounted) return;
+      setState(() {
+        _profile = p.copyWith(
+          isFollowing: next,
+          followers: p.followers + (next ? 1 : -1),
+        );
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذّر تنفيذ المتابعة')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _openSettings() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    );
+    if (changed == true) _load();
+
+    if (!mounted) return;
+    if (!SupabaseService.instance.isSignedIn) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+        (_) => false,
+      );
+    }
+  }
+
+  void _openProfile(String userId) {
+    if (userId == _profile?.id) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ProfileScreen(userId: userId)),
+    );
+  }
+
+  void _openHashtag(String tag) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => HashtagScreen(tag: tag)),
+    );
+  }
+
+  Future<void> _openPost(Post post) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
+    );
+    _load();
   }
 
   @override
   Widget build(BuildContext context) {
+    final p = _profile;
+
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          _cover(context),
-          _info(context),
-          _tabs(context),
-          ..._posts.map((p) => PostCard(post: p)),
-        ],
-      ),
+      body: _loading && p == null
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.brand),
+            )
+          : p == null
+              ? Center(
+                  child: Text(
+                    'تعذّر تحميل الملف الشخصي',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
+              : RefreshIndicator(
+                  color: AppColors.brand,
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      _cover(context, p),
+                      _info(context, p),
+                      const Divider(height: 1, color: AppColors.border),
+                      ..._posts.map(
+                        (post) => PostCard(
+                          post: post,
+                          onOpenProfile: _openProfile,
+                          onOpenHashtag: _openHashtag,
+                          onOpenPost: _openPost,
+                          onReply: _openPost,
+                          onChanged: _load,
+                        ),
+                      ),
+                      if (_posts.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(30),
+                          child: Center(
+                            child: Text(
+                              'لا توجد منشورات بعد',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
       bottomNavigationBar:
           widget.showBottomNav ? const ShareBottomNav(currentIndex: 4) : null,
     );
   }
 
-  Widget _cover(BuildContext context) {
+  Widget _cover(BuildContext context, UserProfile p) {
     return SizedBox(
       height: 180,
       child: Stack(
@@ -98,7 +200,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               gradient: LinearGradient(
                 begin: Alignment.topRight,
                 end: Alignment.bottomLeft,
-                colors: [AppColors.brand, AppColors.blue],
+                colors: [AppColors.brand, AppColors.brandDeep],
               ),
             ),
           ),
@@ -109,19 +211,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Icon(
-                    Icons.more_horiz,
-                    size: 20,
-                    color: AppColors.background,
-                  ),
-                  InkWell(
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: const Icon(
-                      Icons.arrow_forward,
-                      size: 19,
-                      color: AppColors.background,
-                    ),
-                  ),
+                  if (_isMe)
+                    InkWell(
+                      onTap: _openSettings,
+                      child: const Icon(Icons.settings_outlined,
+                          size: 22, color: AppColors.background),
+                    )
+                  else
+                    const SizedBox(width: 22),
+                  if (Navigator.of(context).canPop())
+                    InkWell(
+                      onTap: () => Navigator.of(context).maybePop(),
+                      child: const Icon(Icons.arrow_forward,
+                          size: 20, color: AppColors.background),
+                    )
+                  else
+                    const SizedBox(width: 20),
                 ],
               ),
             ),
@@ -136,8 +241,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 shape: BoxShape.circle,
               ),
               child: AvatarCircle(
-                initial: _profile.initial,
-                seed: _profile.avatarSeed,
+                initial: p.initial,
+                seed: p.avatarSeed,
+                imageUrl: p.avatarUrl,
                 size: 80,
               ),
             ),
@@ -147,7 +253,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _info(BuildContext context) {
+  Widget _info(BuildContext context, UserProfile p) {
     final t = Theme.of(context).textTheme;
 
     return Padding(
@@ -158,29 +264,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              _messageButton(),
-              const SizedBox(width: 8),
-              _followButton(context),
+              if (_isMe)
+                _editButton(context)
+              else ...[
+                _messageButton(),
+                const SizedBox(width: 8),
+                _followButton(context, p),
+              ],
             ],
           ),
           const SizedBox(height: 12),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _profile.name,
-                style: t.titleMedium?.copyWith(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
+              Flexible(
+                child: Text(
+                  p.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.titleMedium?.copyWith(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
-              if (_profile.verified) ...[
+              if (p.verified) ...[
                 const SizedBox(width: 6),
-                const Icon(
-                  Icons.verified,
-                  size: 19,
-                  color: AppColors.blue,
-                ),
+                const Icon(Icons.verified, size: 19, color: AppColors.blue),
               ],
             ],
           ),
@@ -188,54 +297,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('‎@${_profile.handle}', style: t.bodySmall),
-              if (_profile.followsYou) ...[
+              Text('‎@${p.handle}', style: t.bodySmall),
+              if (p.followsYou) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: AppColors.border.withOpacity(0.6),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(
-                    'يتابعك',
-                    style: t.bodySmall?.copyWith(fontSize: 11),
-                  ),
+                  child: Text('يتابعك',
+                      style: t.bodySmall?.copyWith(fontSize: 11)),
                 ),
               ],
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            _profile.bio,
-            textAlign: TextAlign.right,
-            style: t.bodyMedium,
-          ),
+          if (p.bio.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(p.bio, textAlign: TextAlign.right, style: t.bodyMedium),
+          ],
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              if (_profile.location != null) ...[
-                Text(_profile.location!, style: t.bodySmall),
+              if (p.location != null && p.location!.isNotEmpty) ...[
+                Text(p.location!, style: t.bodySmall),
                 const SizedBox(width: 5),
-                const Icon(
-                  Icons.place_outlined,
-                  size: 15,
-                  color: AppColors.textMuted,
-                ),
+                const Icon(Icons.place_outlined,
+                    size: 15, color: AppColors.textMuted),
                 const SizedBox(width: 16),
               ],
-              if (_profile.joined != null) ...[
-                Text(_profile.joined!, style: t.bodySmall),
+              if (p.joined != null) ...[
+                Text(p.joined!, style: t.bodySmall),
                 const SizedBox(width: 5),
-                const Icon(
-                  Icons.calendar_today_outlined,
-                  size: 15,
-                  color: AppColors.textMuted,
-                ),
+                const Icon(Icons.calendar_today_outlined,
+                    size: 15, color: AppColors.textMuted),
               ],
             ],
           ),
@@ -243,11 +340,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              _stat(context, _profile.posts, 'منشور'),
+              _stat(context, p.posts, 'منشور'),
               const SizedBox(width: 18),
-              _stat(context, _profile.following, 'يتابع'),
+              _stat(context, p.following, 'يتابع'),
               const SizedBox(width: 18),
-              _stat(context, _profile.followers, 'متابِع'),
+              _stat(context, p.followers, 'متابِع'),
             ],
           ),
         ],
@@ -261,18 +358,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          UserProfile.formatCount(value),
-          style: t.titleMedium?.copyWith(fontSize: 15),
-        ),
+        Text(UserProfile.formatCount(value),
+            style: t.titleMedium?.copyWith(fontSize: 15)),
         const SizedBox(width: 5),
         Text(label, style: t.bodySmall),
       ],
     );
   }
 
-  Widget _followButton(BuildContext context) {
-    final following = _profile.isFollowing;
+  Widget _editButton(BuildContext context) {
+    return Material(
+      color: AppColors.background,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: _openSettings,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: const Text(
+            'تعديل الملف',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              height: 1.55,
+              color: AppColors.text,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _followButton(BuildContext context, UserProfile p) {
+    final following = p.isFollowing;
 
     return Material(
       color: following ? AppColors.background : AppColors.brand,
@@ -317,60 +439,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: AppColors.border),
           ),
-          child: const Icon(
-            Icons.mail_outline,
-            size: 19,
-            color: AppColors.text,
-          ),
+          child: const Icon(Icons.mail_outline,
+              size: 19, color: AppColors.text),
         ),
-      ),
-    );
-  }
-
-  Widget _tabs(BuildContext context) {
-    const labels = ['المنشورات', 'الردود', 'الوسائط', 'الإعجابات'];
-
-    return Container(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: AppColors.border)),
-      ),
-      child: Row(
-        children: List.generate(labels.length, (i) {
-          final active = _tab == i;
-
-          return Expanded(
-            child: InkWell(
-              onTap: () => setState(() => _tab = i),
-              child: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      labels[i],
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontSize: 14,
-                            fontWeight:
-                                active ? FontWeight.w700 : FontWeight.w500,
-                            color:
-                                active ? AppColors.text : AppColors.textMuted,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: 40,
-                      height: 3,
-                      decoration: BoxDecoration(
-                        color: active ? AppColors.brand : Colors.transparent,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }),
       ),
     );
   }
