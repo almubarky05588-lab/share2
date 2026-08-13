@@ -2,38 +2,56 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// منشور واحد في الفيد
+/// منشور واحد في الفيد — مبني من عرض posts_feed
 class Post {
   const Post({
     required this.id,
+    required this.authorId,
     required this.authorName,
     required this.handle,
     required this.body,
     required this.timeAgo,
+    this.avatarUrl,
     this.verified = false,
     this.likes = 0,
     this.reshares = 0,
     this.comments = 0,
-    this.hasMedia = false,
-    this.resharedBy,
+    this.likedByMe = false,
+    this.resharedByMe = false,
+    this.mediaUrl,
+    this.mediaType,
+    this.replyTo,
+    this.resharedFrom,
   });
 
   final String id;
+  final String authorId;
   final String authorName;
   final String handle; // بدون @
   final String body;
-  final String timeAgo; // مثل: 2س
+  final String timeAgo;
+  final String? avatarUrl;
   final bool verified;
+
   final int likes;
   final int reshares;
   final int comments;
-  final bool hasMedia;
-  final String? resharedBy; // اسم من أعاد النشر (ريشير)
+  final bool likedByMe;
+  final bool resharedByMe;
 
-  /// الحرف الأول للصورة الرمزية
+  final String? mediaUrl;
+  final String? mediaType; // image | video
+  final String? replyTo;
+
+  /// عند الريشير: المنشور الأصلي
+  final Post? resharedFrom;
+
+  bool get isReshare => resharedFrom != null;
+  bool get hasMedia => mediaUrl != null && mediaUrl!.isNotEmpty;
+  bool get isVideo => mediaType == 'video';
+
   String get initial => authorName.isEmpty ? '؟' : authorName.characters.first;
 
-  /// لون ثابت لكل مستخدم — مشتق من المعرّف
   Color get avatarSeed {
     const palette = [
       AppColors.brand,
@@ -44,18 +62,71 @@ class Post {
     return palette[handle.hashCode.abs() % palette.length];
   }
 
-  /// للربط مع Supabase لاحقًا
-  factory Post.fromMap(Map<String, dynamic> map) => Post(
-        id: map['id'].toString(),
-        authorName: map['author_name'] as String? ?? '',
-        handle: map['handle'] as String? ?? '',
-        body: map['body'] as String? ?? '',
-        timeAgo: map['time_ago'] as String? ?? '',
-        verified: map['verified'] as bool? ?? false,
-        likes: map['likes'] as int? ?? 0,
-        reshares: map['reshares'] as int? ?? 0,
-        comments: map['comments'] as int? ?? 0,
-        hasMedia: map['has_media'] as bool? ?? false,
-        resharedBy: map['reshared_by'] as String?,
+  Post copyWith({
+    int? likes,
+    int? reshares,
+    bool? likedByMe,
+    bool? resharedByMe,
+  }) =>
+      Post(
+        id: id,
+        authorId: authorId,
+        authorName: authorName,
+        handle: handle,
+        body: body,
+        timeAgo: timeAgo,
+        avatarUrl: avatarUrl,
+        verified: verified,
+        likes: likes ?? this.likes,
+        reshares: reshares ?? this.reshares,
+        comments: comments,
+        likedByMe: likedByMe ?? this.likedByMe,
+        resharedByMe: resharedByMe ?? this.resharedByMe,
+        mediaUrl: mediaUrl,
+        mediaType: mediaType,
+        replyTo: replyTo,
+        resharedFrom: resharedFrom,
       );
+
+  /// يبني المنشور من صف عرض posts_feed
+  factory Post.fromFeedRow(
+    Map<String, dynamic> row, {
+    required String Function(String?) formatTime,
+  }) {
+    Post? original;
+
+    if (row['reshare_of'] != null && row['original_handle'] != null) {
+      original = Post(
+        id: row['reshare_of'].toString(),
+        authorId: row['original_author_id']?.toString() ?? '',
+        authorName: row['original_author_name'] as String? ?? '',
+        handle: row['original_handle'] as String? ?? '',
+        body: row['original_body'] as String? ?? '',
+        timeAgo: formatTime(row['original_created_at'] as String?),
+        verified: row['original_verified'] as bool? ?? false,
+        mediaUrl: row['original_media_url'] as String?,
+        mediaType: row['original_media_type'] as String?,
+      );
+    }
+
+    return Post(
+      id: row['id'].toString(),
+      authorId: row['author_id']?.toString() ?? '',
+      authorName: row['author_name'] as String? ?? '',
+      handle: row['handle'] as String? ?? '',
+      body: row['body'] as String? ?? '',
+      timeAgo: formatTime(row['created_at'] as String?),
+      avatarUrl: row['avatar_url'] as String?,
+      verified: row['verified'] as bool? ?? false,
+      likes: (row['like_count'] as num?)?.toInt() ?? 0,
+      reshares: (row['reshare_count'] as num?)?.toInt() ?? 0,
+      comments: (row['reply_count'] as num?)?.toInt() ?? 0,
+      likedByMe: row['liked_by_me'] as bool? ?? false,
+      resharedByMe: row['reshared_by_me'] as bool? ?? false,
+      mediaUrl: row['media_url'] as String?,
+      mediaType: row['media_type'] as String?,
+      replyTo: row['reply_to']?.toString(),
+      resharedFrom: original,
+    );
+  }
 }
