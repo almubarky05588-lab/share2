@@ -53,9 +53,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       final profile = await service.fetchProfile(id);
-      final posts = _tab == 1
-          ? await service.fetchLikedPosts(id)
-          : await service.fetchUserPosts(id);
+
+      final blockedEither =
+          (profile?.isBlocked ?? false) || (profile?.blockedMe ?? false);
+
+      final posts = blockedEither
+          ? <Post>[]
+          : _tab == 1
+              ? await service.fetchLikedPosts(id)
+              : await service.fetchUserPosts(id);
 
       if (!mounted) return;
       setState(() {
@@ -109,7 +115,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         context: context,
         builder: (_) => AlertDialog(
           title: Text('حظر ${p.name}'),
-          content: const Text('لن تظهر لك منشوراته، ولن يتابع أحدكما الآخر.'),
+          content: const Text(
+            'لن تظهر لك منشوراته، ولن يستطيع رؤية محتواك ولا ذكرك ولا الرد عليك.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -230,41 +238,104 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       _head(context, p),
                       _info(context, p),
-                      _actions(context, p),
+                      _actionsRow(context, p),
                       const SizedBox(height: 14),
-                      _tabs(context),
-                      const Divider(height: 1, color: AppColors.border),
-                      ..._posts.map(
-                        (post) => PostCard(
-                          post: post,
-                          onOpenProfile: _openProfile,
-                          onOpenHandle: _openHandle,
-                          onOpenHashtag: _openHashtag,
-                          onOpenPost: _openPost,
-                          onReply: _reply,
-                          onChanged: _load,
-                          onDeleted: _load,
-                        ),
-                      ),
-                      if (_posts.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(30),
-                          child: Center(
-                            child: Text(
-                              _tab == 1
-                                  ? 'لا توجد منشورات في المفضلة'
-                                  : 'لا توجد منشورات بعد',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
+                      if (p.isBlocked || p.blockedMe)
+                        _blockedNotice(context, p)
+                      else ...[
+                        _tabs(context),
+                        const Divider(height: 1, color: AppColors.border),
+                        ..._posts.map(
+                          (post) => PostCard(
+                            post: post,
+                            onOpenProfile: _openProfile,
+                            onOpenHandle: _openHandle,
+                            onOpenHashtag: _openHashtag,
+                            onOpenPost: _openPost,
+                            onReply: _reply,
+                            onChanged: _load,
+                            onDeleted: _load,
                           ),
                         ),
+                        if (_posts.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(30),
+                            child: Center(
+                              child: Text(
+                                _tab == 1
+                                    ? 'لا توجد منشورات في المفضلة'
+                                    : 'لا توجد منشورات بعد',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ),
+                      ],
                     ],
                   ),
                 ),
     );
   }
 
-  /// الغلاف مع الصورة نصفها فوقه ونصفها تحته
+  /// لافتة الحظر بدل المنشورات
+  Widget _blockedNotice(BuildContext context, UserProfile p) {
+    final t = Theme.of(context).textTheme;
+    final iBlocked = p.isBlocked;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 34, 28, 40),
+      child: Column(
+        children: [
+          Icon(
+            iBlocked ? Icons.block : Icons.lock_outline,
+            size: 44,
+            color: AppColors.textMuted,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            iBlocked ? 'أنت حاظر هذا الحساب' : 'هذا الحساب حاظرك',
+            textAlign: TextAlign.center,
+            style: t.titleMedium?.copyWith(fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            iBlocked
+                ? 'لا ترى منشوراته، ولا يستطيع رؤية محتواك ولا ذكرك ولا الرد عليك.'
+                : 'لا يمكنك رؤية منشوراته ولا التفاعل معه.',
+            textAlign: TextAlign.center,
+            style: t.bodySmall,
+          ),
+          if (iBlocked) ...[
+            const SizedBox(height: 18),
+            Material(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(22),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: _toggleBlock,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 26, vertical: 11),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(22),
+                    border: Border.all(color: AppColors.like),
+                  ),
+                  child: const Text(
+                    'إلغاء الحظر',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.like,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _head(BuildContext context, UserProfile p) {
     return SizedBox(
       height: 136 + 46,
@@ -331,108 +402,109 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// الاسم فالمعرّف فالبايو فالبيانات فالإحصائيات
   Widget _info(BuildContext context, UserProfile p) {
     final t = Theme.of(context).textTheme;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Row(
-            textDirection: TextDirection.rtl,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Flexible(
-                child: Text(
-                  p.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.titleMedium?.copyWith(
-                    fontSize: 23,
-                    fontWeight: FontWeight.w800,
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    p.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.titleMedium?.copyWith(
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-              ),
-              if (p.verified) ...[
-                const SizedBox(width: 6),
-                const Icon(Icons.verified, size: 19, color: AppColors.blue),
+                if (p.verified) ...[
+                  const SizedBox(width: 6),
+                  const Icon(Icons.verified, size: 19, color: AppColors.blue),
+                ],
               ],
-            ],
-          ),
-          const SizedBox(height: 2),
-          Row(
-            textDirection: TextDirection.rtl,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('‎@${p.handle}', style: t.bodySmall),
-              if (p.followsYou) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.border.withOpacity(0.6),
-                    borderRadius: BorderRadius.circular(6),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('‎@${p.handle}', style: t.bodySmall),
+                if (p.followsYou) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.border.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text('يتابعك',
+                        style: t.bodySmall?.copyWith(fontSize: 11)),
                   ),
-                  child: Text('يتابعك',
-                      style: t.bodySmall?.copyWith(fontSize: 11)),
-                ),
+                ],
               ],
+            ),
+            if (p.bio.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(p.bio, style: t.bodyMedium),
             ],
-          ),
-          if (p.bio.isNotEmpty) ...[
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: Text(p.bio,
-                  textAlign: TextAlign.right, style: t.bodyMedium),
+            Wrap(
+              spacing: 16,
+              runSpacing: 6,
+              children: [
+                if (p.location != null && p.location!.isNotEmpty)
+                  _meta(context, Icons.place_outlined, p.location!),
+                if (p.websiteLabel != null)
+                  _meta(context, Icons.link, p.websiteLabel!,
+                      color: AppColors.brand),
+                if (p.joined != null)
+                  _meta(context, Icons.calendar_today_outlined, p.joined!),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _stat(context, p.followers, 'متابِع',
+                    onTap: () => _openUserList(UserListKind.followers)),
+                const SizedBox(width: 18),
+                _stat(context, p.following, 'يتابع',
+                    onTap: () => _openUserList(UserListKind.following)),
+                const SizedBox(width: 18),
+                _stat(context, p.posts, 'منشور'),
+              ],
             ),
           ],
-          const SizedBox(height: 12),
-          Wrap(
-            alignment: WrapAlignment.end,
-            textDirection: TextDirection.rtl,
-            spacing: 16,
-            runSpacing: 6,
-            children: [
-              if (p.location != null && p.location!.isNotEmpty)
-                _meta(context, Icons.place_outlined, p.location!),
-              if (p.websiteLabel != null)
-                _meta(context, Icons.link, p.websiteLabel!,
-                    color: AppColors.brand),
-              if (p.joined != null)
-                _meta(context, Icons.calendar_today_outlined, p.joined!),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            textDirection: TextDirection.rtl,
-            children: [
-              _stat(context, p.followers, 'متابِع',
-                  onTap: () => _openUserList(UserListKind.followers)),
-              const SizedBox(width: 18),
-              _stat(context, p.following, 'يتابع',
-                  onTap: () => _openUserList(UserListKind.following)),
-              const SizedBox(width: 18),
-              _stat(context, p.posts, 'منشور'),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  /// صف الأزرار كامل العرض
-  Widget _actions(BuildContext context, UserProfile p) {
+  Widget _actionsRow(BuildContext context, UserProfile p) {
+    if (p.blockedMe) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
       child: Row(
         textDirection: TextDirection.rtl,
         children: [
           if (_isMe)
-            Expanded(child: _outlinedButton(context, 'تعديل الملف',
-                onTap: _openSettings))
+            Expanded(
+              child: _outlinedButton(context, 'تعديل الملف',
+                  onTap: _openSettings),
+            )
+          else if (p.isBlocked)
+            Expanded(
+              child: _outlinedButton(context, 'إلغاء الحظر',
+                  onTap: _toggleBlock, danger: true),
+            )
           else ...[
             Expanded(
               child: _filledButton(
@@ -453,7 +525,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _outlinedButton(BuildContext context, String label,
-      {required VoidCallback onTap}) {
+      {required VoidCallback onTap, bool danger = false}) {
+    final color = danger ? AppColors.like : AppColors.text;
+
     return Material(
       color: AppColors.background,
       borderRadius: BorderRadius.circular(22),
@@ -465,14 +539,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: AppColors.border),
+            border:
+                Border.all(color: danger ? AppColors.like : AppColors.border),
           ),
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: AppColors.text,
+              color: color,
             ),
           ),
         ),
@@ -513,7 +588,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _meta(BuildContext context, IconData icon, String text,
       {Color color = AppColors.textMuted}) {
     return Row(
-      textDirection: TextDirection.rtl,
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 15, color: color),
@@ -534,7 +608,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
       child: Row(
-        textDirection: TextDirection.rtl,
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(UserProfile.formatCount(value),
