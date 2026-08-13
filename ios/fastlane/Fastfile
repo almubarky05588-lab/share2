@@ -16,14 +16,16 @@ platform :ios do
     )
 
     # سحب الشهادة وملف التزويد من مستودع share-certs
-    # ينشئها أول مرة فقط، ويعيد استخدامها بعدها
     match(
       type: "appstore",
       api_key: api_key,
       readonly: false
     )
 
-    # ضبط التوقيع اليدوي في مشروع Xcode — يمنع خطأ "requires a development team"
+    # اسم ملف التزويد الفعلي كما ثبّته match — لا نثبّته يدويًا
+    profile_name = ENV["sigh_sa.almubarky.shareApp_appstore_profile-name"]
+
+    # ضبط التوقيع اليدوي في مشروع Xcode
     update_code_signing_settings(
       path: "Runner.xcodeproj",
       use_automatic_signing: false,
@@ -31,7 +33,7 @@ platform :ios do
       targets: ["Runner"],
       code_sign_identity: "Apple Distribution",
       bundle_identifier: "sa.almubarky.shareApp",
-      profile_name: "match AppStore sa.almubarky.shareApp"
+      profile_name: profile_name
     )
 
     # رقم بناء جديد في كل مرة — مأخوذ من رقم تشغيل GitHub Actions
@@ -47,7 +49,7 @@ platform :ios do
       export_method: "app-store",
       export_options: {
         provisioningProfiles: {
-          "sa.almubarky.shareApp" => "match AppStore sa.almubarky.shareApp"
+          "sa.almubarky.shareApp" => profile_name
         }
       }
     )
