@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:mime/mime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/conversation.dart';
@@ -15,6 +18,8 @@ class SupabaseService {
 
   String? get currentUserId => _db.auth.currentUser?.id;
   bool get isSignedIn => currentUserId != null;
+
+  static const _feedColumns = '*';
 
   // ── المصادقة ─────────────────────────────────────────────
 
@@ -40,109 +45,166 @@ class SupabaseService {
 
   Future<void> signOut() => _db.auth.signOut();
 
-  // ── التايم لاين ──────────────────────────────────────────
+  // ── قراءة المنشورات ──────────────────────────────────────
+
+  Post _post(Map<String, dynamic> row) =>
+      Post.fromFeedRow(row, formatTime: formatTimeAgo);
 
   /// الفيد العام أو منشورات من أتابعهم
   Future<List<Post>> fetchTimeline({bool followingOnly = false}) async {
     final uid = currentUserId;
 
-    var query = _db.from('posts').select(
-          'id, body, media_url, created_at, reshare_of, '
-          'author:profiles!posts_author_id_fkey(id, handle, name, verified), '
-          'likes(count), reshares:posts!posts_reshare_of_fkey(count), '
-          'replies:posts!posts_reply_to_fkey(count)',
-        );
+    var query = _db.from('posts_feed').select(_feedColumns).isFilter('reply_to', null);
 
     if (followingOnly && uid != null) {
       final follows = await _db
           .from('follows')
           .select('following_id')
           .eq('follower_id', uid);
-      final ids = follows.map((e) => e['following_id'] as String).toList();
-      if (ids.isEmpty) return [];
+
+      final ids = follows.map((e) => e['following_id'] as String).toList()
+        ..add(uid);
       query = query.inFilter('author_id', ids);
     }
 
     final rows = await query.order('created_at', ascending: false).limit(50);
-    return rows.map<Post>(_postFromRow).toList();
+    return rows.map<Post>(_post).toList();
   }
 
   Future<List<Post>> fetchUserPosts(String userId) async {
     final rows = await _db
-        .from('posts')
-        .select(
-          'id, body, media_url, created_at, reshare_of, '
-          'author:profiles!posts_author_id_fkey(id, handle, name, verified), '
-          'likes(count), reshares:posts!posts_reshare_of_fkey(count), '
-          'replies:posts!posts_reply_to_fkey(count)',
-        )
+        .from('posts_feed')
+        .select(_feedColumns)
         .eq('author_id', userId)
+        .isFilter('reply_to', null)
         .order('created_at', ascending: false)
         .limit(50);
 
-    return rows.map<Post>(_postFromRow).toList();
+    return rows.map<Post>(_post).toList();
   }
 
-  Post _postFromRow(Map<String, dynamic> row) {
-    final author = row['author'] as Map<String, dynamic>? ?? const {};
+  Future<Post?> fetchPost(String postId) async {
+    final row = await _db
+        .from('posts_feed')
+        .select(_feedColumns)
+        .eq('id', postId)
+        .maybeSingle();
 
-    int countOf(String key) {
-      final v = row[key];
-      if (v is List && v.isNotEmpty) {
-        return (v.first as Map<String, dynamic>)['count'] as int? ?? 0;
-      }
-      return 0;
+    return row == null ? null : _post(row);
+  }
+
+  /// الردود على منشور
+  Future<List<Post>> fetchReplies(String postId) async {
+    final rows = await _db
+        .from('posts_feed')
+        .select(_feedColumns)
+        .eq('reply_to', postId)
+        .order('created_at');
+
+    return rows.map<Post>(_post).toList();
+  }
+
+  /// منشورات هاشتاق
+  Future<List<Post>> fetchByHashtag(String tag) async {
+    final clean = tag.replaceAll('#', '').toLowerCase();
+
+    final rows = await _db
+        .from('post_hashtags')
+        .select('post_id, hashtags!inner(tag)')
+        .eq('hashtags.tag', clean)
+        .limit(50);
+
+    final ids = rows.map((e) => e['post_id'] as String).toList();
+    if (ids.isEmpty) return [];
+
+    final posts = await _db
+        .from('posts_feed')
+        .select(_feedColumns)
+        .inFilter('id', ids)
+        .order('created_at', ascending: false);
+
+    return posts.map<Post>(_post).toList();
+  }
+
+  /// أكثر الهاشتاقات تداولًا
+  Future<List<({String tag, int count})>> fetchTrendingHashtags() async {
+    final rows = await _db
+        .from('post_hashtags')
+        .select('hashtags(tag)')
+        .limit(300);
+
+    final counts = <String, int>{};
+    for (final r in rows) {
+      final h = r['hashtags'] as Map<String, dynamic>?;
+      final tag = h?['tag'] as String?;
+      if (tag == null) continue;
+      counts[tag] = (counts[tag] ?? 0) + 1;
     }
 
-    return Post(
-      id: row['id'].toString(),
-      authorName: author['name'] as String? ?? '',
-      handle: author['handle'] as String? ?? '',
-      verified: author['verified'] as bool? ?? false,
-      body: row['body'] as String? ?? '',
-      timeAgo: formatTimeAgo(row['created_at'] as String?),
-      hasMedia: row['media_url'] != null,
-      likes: countOf('likes'),
-      reshares: countOf('reshares'),
-      comments: countOf('replies'),
-    );
+    final list = counts.entries
+        .map((e) => (tag: e.key, count: e.value))
+        .toList()
+      ..sort((a, b) => b.count.compareTo(a.count));
+
+    return list.take(20).toList();
   }
 
   // ── النشر والتفاعل ───────────────────────────────────────
 
-  Future<void> createPost(String body, {String? replyTo}) async {
+  Future<void> createPost(
+    String body, {
+    String? replyTo,
+    String? mediaUrl,
+    String? mediaType,
+  }) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
 
     final inserted = await _db
         .from('posts')
-        .insert({'author_id': uid, 'body': body, 'reply_to': replyTo})
+        .insert({
+          'author_id': uid,
+          'body': body,
+          'reply_to': replyTo,
+          'media_url': mediaUrl,
+          'media_type': mediaType,
+        })
         .select('id')
         .single();
 
-    final handles = _extractHandles(body);
+    await _linkMentions(inserted['id'] as String, body);
+  }
+
+  Future<void> _linkMentions(String postId, String body) async {
+    final handles = extractHandles(body);
     if (handles.isEmpty) return;
 
-    final users = await _db
-        .from('profiles')
-        .select('id')
-        .inFilter('handle', handles);
-
+    final users =
+        await _db.from('profiles').select('id').inFilter('handle', handles);
     if (users.isEmpty) return;
 
     await _db.from('mentions').insert([
-      for (final u in users)
-        {'post_id': inserted['id'], 'user_id': u['id']},
+      for (final u in users) {'post_id': postId, 'user_id': u['id']},
     ]);
   }
 
-  Future<void> reshare(String postId) async {
+  /// إعادة النشر — أو التراجع عنها
+  Future<void> toggleReshare(String postId, bool on) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
-    await _db.from('posts').insert({
-      'author_id': uid,
-      'reshare_of': postId,
-    });
+
+    if (on) {
+      await _db.from('posts').insert({
+        'author_id': uid,
+        'reshare_of': postId,
+      });
+    } else {
+      await _db
+          .from('posts')
+          .delete()
+          .eq('author_id', uid)
+          .eq('reshare_of', postId);
+    }
   }
 
   Future<void> setLike(String postId, bool liked) async {
@@ -150,7 +212,9 @@ class SupabaseService {
     if (uid == null) throw StateError('غير مسجّل الدخول');
 
     if (liked) {
-      await _db.from('likes').insert({'post_id': postId, 'user_id': uid});
+      await _db
+          .from('likes')
+          .upsert({'post_id': postId, 'user_id': uid});
     } else {
       await _db
           .from('likes')
@@ -160,9 +224,55 @@ class SupabaseService {
     }
   }
 
-  static List<String> _extractHandles(String body) {
+  Future<void> deletePost(String postId) async {
+    await _db.from('posts').delete().eq('id', postId);
+  }
+
+  static List<String> extractHandles(String body) {
     final re = RegExp(r'@([a-zA-Z0-9._]{3,20})');
     return re.allMatches(body).map((m) => m.group(1)!).toSet().toList();
+  }
+
+  // ── رفع الوسائط ──────────────────────────────────────────
+
+  /// يرفع ملفًا ويعيد رابطه العام
+  Future<({String url, String type})> uploadMedia(File file) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    final mime = lookupMimeType(file.path) ?? 'application/octet-stream';
+    final isVideo = mime.startsWith('video/');
+    final ext = file.path.split('.').last.toLowerCase();
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    await _db.storage.from('post-media').upload(
+          path,
+          file,
+          fileOptions: FileOptions(contentType: mime, upsert: true),
+        );
+
+    final url = _db.storage.from('post-media').getPublicUrl(path);
+    return (url: url, type: isVideo ? 'video' : 'image');
+  }
+
+  /// يرفع صورة رمزية ويحدّث الملف الشخصي
+  Future<String> uploadAvatar(File file) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    final mime = lookupMimeType(file.path) ?? 'image/jpeg';
+    final ext = file.path.split('.').last.toLowerCase();
+    final path = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    await _db.storage.from('avatars').upload(
+          path,
+          file,
+          fileOptions: FileOptions(contentType: mime, upsert: true),
+        );
+
+    final url = _db.storage.from('avatars').getPublicUrl(path);
+    await _db.from('profiles').update({'avatar_url': url}).eq('id', uid);
+    return url;
   }
 
   // ── المنشن والإشعارات ────────────────────────────────────
@@ -173,22 +283,23 @@ class SupabaseService {
 
     final items = <NotificationItem>[];
 
-    // منشن
     final mentions = await _db
         .from('mentions')
         .select(
-          'post:posts(id, body, created_at, reply_to, '
+          'post_id, post:posts(id, body, created_at, reply_to, '
           'author:profiles!posts_author_id_fkey(handle, name, verified))',
         )
         .eq('user_id', uid)
-        .limit(30);
+        .limit(40);
 
     for (final m in mentions) {
       final p = m['post'] as Map<String, dynamic>?;
       if (p == null) continue;
       final a = p['author'] as Map<String, dynamic>? ?? const {};
+
       items.add(NotificationItem(
         id: 'm_${p['id']}',
+        postId: p['id'].toString(),
         type: p['reply_to'] != null
             ? NotificationType.commentMention
             : NotificationType.mention,
@@ -200,12 +311,11 @@ class SupabaseService {
       ));
     }
 
-    // متابعون جدد
     final follows = await _db
         .from('follows')
         .select(
-          'created_at, '
-          'follower:profiles!follows_follower_id_fkey(handle, name, verified)',
+          'created_at, follower_id, '
+          'follower:profiles!follows_follower_id_fkey(id, handle, name, verified)',
         )
         .eq('following_id', uid)
         .order('created_at', ascending: false)
@@ -215,6 +325,7 @@ class SupabaseService {
       final a = f['follower'] as Map<String, dynamic>? ?? const {};
       items.add(NotificationItem(
         id: 'f_${a['handle']}',
+        actorId: a['id']?.toString(),
         type: NotificationType.follow,
         actorName: a['name'] as String? ?? '',
         handle: a['handle'] as String? ?? '',
@@ -259,12 +370,13 @@ class SupabaseService {
       final msgs = (c['messages'] as List? ?? const [])
           .cast<Map<String, dynamic>>()
           .toList()
-        ..sort((a, b) => (b['created_at'] as String)
-            .compareTo(a['created_at'] as String));
+        ..sort((a, b) =>
+            (b['created_at'] as String).compareTo(a['created_at'] as String));
       final last = msgs.isEmpty ? null : msgs.first;
 
       result.add(Conversation(
         id: c['id'].toString(),
+        otherUserId: other['id']?.toString() ?? '',
         name: other['name'] as String? ?? '',
         handle: other['handle'] as String? ?? '',
         verified: other['verified'] as bool? ?? false,
@@ -305,7 +417,6 @@ class SupabaseService {
     });
   }
 
-  /// بث مباشر لرسائل محادثة
   Stream<List<Message>> messageStream(String conversationId) {
     final uid = currentUserId;
     return _db
@@ -328,20 +439,16 @@ class SupabaseService {
   Future<UserProfile?> fetchProfile(String userId) async {
     final row = await _db
         .from('profiles')
-        .select('id, handle, name, bio, location, verified, created_at')
+        .select('id, handle, name, bio, location, avatar_url, verified, created_at')
         .eq('id', userId)
         .maybeSingle();
 
     if (row == null) return null;
 
-    final followers = await _db
-        .from('follows')
-        .count()
-        .eq('following_id', userId);
-    final following = await _db
-        .from('follows')
-        .count()
-        .eq('follower_id', userId);
+    final followers =
+        await _db.from('follows').count().eq('following_id', userId);
+    final following =
+        await _db.from('follows').count().eq('follower_id', userId);
     final posts = await _db.from('posts').count().eq('author_id', userId);
 
     final me = currentUserId;
@@ -367,10 +474,12 @@ class SupabaseService {
     }
 
     return UserProfile(
+      id: row['id'].toString(),
       name: row['name'] as String? ?? '',
       handle: row['handle'] as String? ?? '',
       bio: row['bio'] as String? ?? '',
       location: row['location'] as String?,
+      avatarUrl: row['avatar_url'] as String?,
       verified: row['verified'] as bool? ?? false,
       joined: formatJoined(row['created_at'] as String?),
       followers: followers,
@@ -381,6 +490,30 @@ class SupabaseService {
     );
   }
 
+  /// ملفي أنا
+  Future<UserProfile?> fetchMyProfile() async {
+    final uid = currentUserId;
+    if (uid == null) return null;
+    return fetchProfile(uid);
+  }
+
+  Future<void> updateProfile({
+    String? name,
+    String? bio,
+    String? location,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    final data = <String, dynamic>{};
+    if (name != null) data['name'] = name;
+    if (bio != null) data['bio'] = bio;
+    if (location != null) data['location'] = location;
+    if (data.isEmpty) return;
+
+    await _db.from('profiles').update(data).eq('id', uid);
+  }
+
   Future<void> setFollow(String userId, bool follow) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
@@ -388,7 +521,7 @@ class SupabaseService {
     if (follow) {
       await _db
           .from('follows')
-          .insert({'follower_id': uid, 'following_id': userId});
+          .upsert({'follower_id': uid, 'following_id': userId});
     } else {
       await _db
           .from('follows')
@@ -396,6 +529,32 @@ class SupabaseService {
           .eq('follower_id', uid)
           .eq('following_id', userId);
     }
+  }
+
+  /// البحث عن مستخدمين بالاسم أو المعرّف
+  Future<List<UserProfile>> searchUsers(String query) async {
+    final q = query.replaceAll('@', '').trim();
+    if (q.isEmpty) return [];
+
+    final rows = await _db
+        .from('profiles')
+        .select('id, handle, name, bio, avatar_url, verified')
+        .or('handle.ilike.%$q%,name.ilike.%$q%')
+        .limit(20);
+
+    return rows
+        .map<UserProfile>((r) => UserProfile(
+              id: r['id'].toString(),
+              name: r['name'] as String? ?? '',
+              handle: r['handle'] as String? ?? '',
+              bio: r['bio'] as String? ?? '',
+              avatarUrl: r['avatar_url'] as String?,
+              verified: r['verified'] as bool? ?? false,
+              followers: 0,
+              following: 0,
+              posts: 0,
+            ))
+        .toList();
   }
 
   // ── تنسيق الوقت ──────────────────────────────────────────
@@ -406,7 +565,7 @@ class SupabaseService {
     if (then == null) return '';
 
     final diff = DateTime.now().difference(then);
-    if (diff.inMinutes < 1) return 'الآن';
+    if (diff.inSeconds < 60) return 'الآن';
     if (diff.inMinutes < 60) return '${diff.inMinutes}د';
     if (diff.inHours < 24) return '${diff.inHours}س';
     if (diff.inDays == 1) return 'أمس';
