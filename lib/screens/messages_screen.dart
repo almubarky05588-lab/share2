@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../models/conversation.dart';
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/share_bottom_nav.dart';
 import 'chat_screen.dart';
 
-/// الرسائل الخاصة — الشاشة ٣ من التصميم
+/// الرسائل الخاصة
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key, this.showChrome = true});
 
-  /// false عند العرض داخل AppShell — شريط التنقل يأتي من الهيكل
   final bool showChrome;
 
   @override
@@ -21,53 +21,41 @@ class _MessagesScreenState extends State<MessagesScreen> {
   final _searchController = TextEditingController();
   String _query = '';
 
-  // مؤقت — يُستبدل بجلب من Supabase
-  static const _conversations = <Conversation>[
-    Conversation(
-      id: '1',
-      name: 'نورة السالم',
-      handle: 'noura_s',
-      verified: true,
-      time: 'الآن',
-      unread: true,
-      lastMessage: 'تمام، أرسل لي ملف التصميم النهائي وأراجعه اليوم بإذن الله.',
-    ),
-    Conversation(
-      id: '2',
-      name: 'خالد المطيري',
-      handle: 'khalid.m',
-      time: '11:20',
-      unread: true,
-      lastMessage: 'شفت الريشير الأخير؟ وصل ناس كثير.',
-    ),
-    Conversation(
-      id: '3',
-      name: 'استوديو مِداد',
-      handle: 'midad.studio',
-      verified: true,
-      time: 'أمس',
-      lastMessage: 'أرسلنا لك دعوة للتعاون على اللوحة الجديدة.',
-    ),
-    Conversation(
-      id: '4',
-      name: 'سارة العتيبي',
-      handle: 'sara.otb',
-      time: 'أمس',
-      lastMessage: 'شكرًا على المنشن 🌿',
-    ),
-    Conversation(
-      id: '5',
-      name: 'فهد الحربي',
-      handle: 'fahad_hr',
-      time: 'الأحد',
-      sentByMe: true,
-      lastMessage: 'راجعت الملاحظات وعدّلت التباعد.',
-    ),
-  ];
+  bool _loading = true;
+  List<Conversation> _conversations = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+
+    try {
+      final items = await SupabaseService.instance.fetchConversations();
+      if (!mounted) return;
+      setState(() {
+        _conversations = items;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
 
   List<Conversation> get _visible {
-    if (_query.trim().isEmpty) return _conversations;
     final q = _query.trim();
+    if (q.isEmpty) return _conversations;
+
     return _conversations
         .where((c) =>
             c.name.contains(q) ||
@@ -76,22 +64,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
         .toList();
   }
 
-  void _openChat(Conversation c) {
-    Navigator.of(context).push(
+  Future<void> _openChat(Conversation c) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ChatScreen(
+          conversationId: c.id,
+          otherUserId: c.otherUserId,
           name: c.name,
           handle: c.handle,
           verified: c.verified,
         ),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+    _load();
   }
 
   @override
@@ -107,15 +92,47 @@ class _MessagesScreenState extends State<MessagesScreen> {
             _header(context),
             _search(context),
             Expanded(
-              child: list.isEmpty
-                  ? _empty(context)
-                  : ListView.builder(
-                      padding: EdgeInsets.zero,
-                      itemCount: list.length,
-                      itemBuilder: (_, i) => _ConversationTile(
-                        conversation: list[i],
-                        onTap: () => _openChat(list[i]),
-                      ),
+              child: _loading
+                  ? const Center(
+                      child:
+                          CircularProgressIndicator(color: AppColors.brand),
+                    )
+                  : RefreshIndicator(
+                      color: AppColors.brand,
+                      onRefresh: _load,
+                      child: list.isEmpty
+                          ? ListView(
+                              physics:
+                                  const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(
+                                  height: MediaQuery.of(context)
+                                          .size
+                                          .height *
+                                      0.25,
+                                ),
+                                Center(
+                                  child: Text(
+                                    _query.isEmpty
+                                        ? 'لا توجد محادثات بعد'
+                                        : 'لا توجد نتائج',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              padding: EdgeInsets.zero,
+                              physics:
+                                  const AlwaysScrollableScrollPhysics(),
+                              itemCount: list.length,
+                              itemBuilder: (_, i) => _ConversationTile(
+                                conversation: list[i],
+                                onTap: () => _openChat(list[i]),
+                              ),
+                            ),
                     ),
             ),
           ],
@@ -129,23 +146,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
   Widget _header(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(right: 18, left: 18, top: 6, bottom: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            'الرسائل الخاصة',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.text,
-                ),
-          ),
-          const Icon(
-            Icons.edit_outlined,
-            size: 20,
-            color: AppColors.text,
-          ),
-        ],
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: Text(
+          'الرسائل الخاصة',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.text,
+              ),
+        ),
       ),
     );
   }
@@ -167,20 +177,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
         ),
         child: Row(
           children: [
-            const Icon(
-              Icons.search,
-              size: AppSizes.iconSmall,
-              color: AppColors.textMuted,
-            ),
+            const Icon(Icons.search,
+                size: AppSizes.iconSmall, color: AppColors.textMuted),
             const SizedBox(width: 9),
             Expanded(
               child: TextField(
                 controller: _searchController,
                 onChanged: (v) => setState(() => _query = v),
                 textAlign: TextAlign.right,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.text,
-                    ),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: AppColors.text),
                 decoration: InputDecoration(
                   isDense: true,
                   border: InputBorder.none,
@@ -191,15 +199,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _empty(BuildContext context) {
-    return Center(
-      child: Text(
-        'لا توجد نتائج',
-        style: Theme.of(context).textTheme.bodySmall,
       ),
     );
   }
@@ -254,16 +253,14 @@ class _ConversationTile extends StatelessWidget {
                               child: Text(
                                 c.name,
                                 overflow: TextOverflow.ellipsis,
-                                style: t.titleMedium?.copyWith(fontSize: 14),
+                                style:
+                                    t.titleMedium?.copyWith(fontSize: 14),
                               ),
                             ),
                             if (c.verified) ...[
                               const SizedBox(width: 5),
-                              const Icon(
-                                Icons.verified,
-                                size: 15,
-                                color: AppColors.blue,
-                              ),
+                              const Icon(Icons.verified,
+                                  size: 15, color: AppColors.blue),
                             ],
                             const SizedBox(width: 6),
                             Text('‎@${c.handle}', style: t.bodySmall),
@@ -287,18 +284,6 @@ class _ConversationTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (c.unread) ...[
-              const SizedBox(width: 11),
-              Container(
-                width: 9,
-                height: 9,
-                margin: const EdgeInsets.only(top: 6),
-                decoration: const BoxDecoration(
-                  color: AppColors.brand,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
           ],
         ),
       ),
