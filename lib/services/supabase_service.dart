@@ -9,6 +9,8 @@ import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/user_profile.dart';
 
+part 'supabase_service_profile.dart';
+
 /// كل استعلامات Supabase في مكان واحد
 class SupabaseService {
   SupabaseService._();
@@ -93,7 +95,6 @@ class SupabaseService {
     await _db.removeChannel(channel);
   }
 
-  /// عدد المنشورات الأحدث من وقت معيّن
   Future<int> countPostsSince(DateTime since,
       {bool followingOnly = false}) async {
     final uid = currentUserId;
@@ -315,6 +316,103 @@ class SupabaseService {
     return row?['id'] as String?;
   }
 
+  // ── رفع الوسائط ──────────────────────────────────────────
+
+  Future<({String url, String type})> uploadMedia(File file) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    final mime = lookupMimeType(file.path) ?? 'application/octet-stream';
+    final isVideo = mime.startsWith('video/');
+    final ext = file.path.split('.').last.toLowerCase();
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    await _db.storage.from('post-media').upload(
+          path,
+          file,
+          fileOptions: FileOptions(contentType: mime, upsert: true),
+        );
+
+    final url = _db.storage.from('post-media').getPublicUrl(path);
+    return (url: url, type: isVideo ? 'video' : 'image');
+  }
+
+  Future<String> uploadAvatar(File file) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    final mime = lookupMimeType(file.path) ?? 'image/jpeg';
+    final ext = file.path.split('.').last.toLowerCase();
+    final path = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    await _db.storage.from('avatars').upload(
+          path,
+          file,
+          fileOptions: FileOptions(contentType: mime, upsert: true),
+        );
+
+    final url = _db.storage.from('avatars').getPublicUrl(path);
+    await _db.from('profiles').update({'avatar_url': url}).eq('id', uid);
+    return url;
+  }
+
+  /// رفع صورة الغلاف
+  Future<String> uploadCover(File file) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    final mime = lookupMimeType(file.path) ?? 'image/jpeg';
+    final ext = file.path.split('.').last.toLowerCase();
+    final path = '$uid/cover_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+    await _db.storage.from('avatars').upload(
+          path,
+          file,
+          fileOptions: FileOptions(contentType: mime, upsert: true),
+        );
+
+    final url = _db.storage.from('avatars').getPublicUrl(path);
+    await _db.from('profiles').update({'cover_url': url}).eq('id', uid);
+    return url;
+  }
+
+  // ── تنسيق ────────────────────────────────────────────────
+
+  static String formatTimeAgo(String? iso) {
+    if (iso == null) return '';
+    final then = DateTime.tryParse(iso)?.toLocal();
+    if (then == null) return '';
+
+    final diff = DateTime.now().difference(then);
+    if (diff.inSeconds < 60) return 'الآن';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}د';
+    if (diff.inHours < 24) return '${diff.inHours}س';
+    if (diff.inDays == 1) return 'أمس';
+    if (diff.inDays < 7) return '${diff.inDays} أيام';
+    return '${then.day}/${then.month}';
+  }
+
+  static String formatClock(String? iso) {
+    final d = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return '';
+    return '${d.hour.toString().padLeft(2, '0')}:'
+        '${d.minute.toString().padLeft(2, '0')}';
+  }
+
+  static String formatJoined(String? iso) {
+    const months = [
+      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+    ];
+    final d = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
+    if (d == null) return '';
+    return 'انضمّ في ${months[d.month - 1]} ${d.year}';
+  }
+}
+part of 'supabase_service.dart';
+
+/// الملف الشخصي · المتابعة · الحظر · الإشعارات · الرسائل
+extension SupabaseProfileApi on SupabaseService {
   // ── الحظر ────────────────────────────────────────────────
 
   Future<void> setBlock(String userId, bool on) async {
@@ -376,11 +474,11 @@ class SupabaseService {
     return rows
         .map((r) => r['blocked'])
         .whereType<Map<String, dynamic>>()
-        .map<UserProfile>(_lightProfile)
+        .map<UserProfile>(_light)
         .toList();
   }
 
-  UserProfile _lightProfile(Map<String, dynamic> r) => UserProfile(
+  UserProfile _light(Map<String, dynamic> r) => UserProfile(
         id: r['id'].toString(),
         name: r['name'] as String? ?? '',
         handle: r['handle'] as String? ?? '',
@@ -406,7 +504,7 @@ class SupabaseService {
     return rows
         .map((r) => r['follower'])
         .whereType<Map<String, dynamic>>()
-        .map<UserProfile>(_lightProfile)
+        .map<UserProfile>(_light)
         .toList();
   }
 
@@ -422,68 +520,8 @@ class SupabaseService {
     return rows
         .map((r) => r['following'])
         .whereType<Map<String, dynamic>>()
-        .map<UserProfile>(_lightProfile)
+        .map<UserProfile>(_light)
         .toList();
-  }
-
-  // ── رفع الوسائط ──────────────────────────────────────────
-
-  Future<({String url, String type})> uploadMedia(File file) async {
-    final uid = currentUserId;
-    if (uid == null) throw StateError('غير مسجّل الدخول');
-
-    final mime = lookupMimeType(file.path) ?? 'application/octet-stream';
-    final isVideo = mime.startsWith('video/');
-    final ext = file.path.split('.').last.toLowerCase();
-    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}.$ext';
-
-    await _db.storage.from('post-media').upload(
-          path,
-          file,
-          fileOptions: FileOptions(contentType: mime, upsert: true),
-        );
-
-    final url = _db.storage.from('post-media').getPublicUrl(path);
-    return (url: url, type: isVideo ? 'video' : 'image');
-  }
-
-  Future<String> uploadAvatar(File file) async {
-    final uid = currentUserId;
-    if (uid == null) throw StateError('غير مسجّل الدخول');
-
-    final mime = lookupMimeType(file.path) ?? 'image/jpeg';
-    final ext = file.path.split('.').last.toLowerCase();
-    final path = '$uid/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
-
-    await _db.storage.from('avatars').upload(
-          path,
-          file,
-          fileOptions: FileOptions(contentType: mime, upsert: true),
-        );
-
-    final url = _db.storage.from('avatars').getPublicUrl(path);
-    await _db.from('profiles').update({'avatar_url': url}).eq('id', uid);
-    return url;
-  }
-
-  /// رفع صورة الغلاف
-  Future<String> uploadCover(File file) async {
-    final uid = currentUserId;
-    if (uid == null) throw StateError('غير مسجّل الدخول');
-
-    final mime = lookupMimeType(file.path) ?? 'image/jpeg';
-    final ext = file.path.split('.').last.toLowerCase();
-    final path = '$uid/cover_${DateTime.now().millisecondsSinceEpoch}.$ext';
-
-    await _db.storage.from('avatars').upload(
-          path,
-          file,
-          fileOptions: FileOptions(contentType: mime, upsert: true),
-        );
-
-    final url = _db.storage.from('avatars').getPublicUrl(path);
-    await _db.from('profiles').update({'cover_url': url}).eq('id', uid);
-    return url;
   }
 
   // ── الإشعارات ────────────────────────────────────────────
@@ -522,7 +560,7 @@ class SupabaseService {
 
       return NotificationItem.fromRow(
         r,
-        formatTime: formatTimeAgo,
+        formatTime: SupabaseService.formatTimeAgo,
         unread: unread,
       );
     }).toList();
@@ -610,7 +648,8 @@ class SupabaseService {
         verified: other['verified'] as bool? ?? false,
         lastMessage: last?['body'] as String? ?? '',
         sentByMe: last != null && last['sender_id'] == uid,
-        time: formatTimeAgo(c['last_message_at'] as String?),
+        time: SupabaseService.formatTimeAgo(
+            c['last_message_at'] as String?),
       ));
     }
 
@@ -629,7 +668,7 @@ class SupabaseService {
         .map<Message>((r) => Message(
               id: r['id'].toString(),
               body: r['body'] as String? ?? '',
-              time: formatClock(r['created_at'] as String?),
+              time: SupabaseService.formatClock(r['created_at'] as String?),
               fromMe: r['sender_id'] == uid,
             ))
         .toList();
@@ -656,7 +695,8 @@ class SupabaseService {
             .map((r) => Message(
                   id: r['id'].toString(),
                   body: r['body'] as String? ?? '',
-                  time: formatClock(r['created_at'] as String?),
+                  time: SupabaseService.formatClock(
+                      r['created_at'] as String?),
                   fromMe: r['sender_id'] == uid,
                 ))
             .toList());
@@ -724,7 +764,7 @@ class SupabaseService {
       avatarUrl: row['avatar_url'] as String?,
       coverUrl: row['cover_url'] as String?,
       verified: row['verified'] as bool? ?? false,
-      joined: formatJoined(row['created_at'] as String?),
+      joined: SupabaseService.formatJoined(row['created_at'] as String?),
       followers: followers,
       following: following,
       posts: posts,
@@ -802,39 +842,6 @@ class SupabaseService {
     }
 
     final rows = await builder.limit(20);
-    return rows.map<UserProfile>(_lightProfile).toList();
-  }
-
-  // ── تنسيق ────────────────────────────────────────────────
-
-  static String formatTimeAgo(String? iso) {
-    if (iso == null) return '';
-    final then = DateTime.tryParse(iso)?.toLocal();
-    if (then == null) return '';
-
-    final diff = DateTime.now().difference(then);
-    if (diff.inSeconds < 60) return 'الآن';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}د';
-    if (diff.inHours < 24) return '${diff.inHours}س';
-    if (diff.inDays == 1) return 'أمس';
-    if (diff.inDays < 7) return '${diff.inDays} أيام';
-    return '${then.day}/${then.month}';
-  }
-
-  static String formatClock(String? iso) {
-    final d = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
-    if (d == null) return '';
-    return '${d.hour.toString().padLeft(2, '0')}:'
-        '${d.minute.toString().padLeft(2, '0')}';
-  }
-
-  static String formatJoined(String? iso) {
-    const months = [
-      'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
-      'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
-    ];
-    final d = iso == null ? null : DateTime.tryParse(iso)?.toLocal();
-    if (d == null) return '';
-    return 'انضمّ في ${months[d.month - 1]} ${d.year}';
+    return rows.map<UserProfile>(_light).toList();
   }
 }
