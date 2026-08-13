@@ -47,20 +47,18 @@ class _PostCardState extends State<PostCard> {
     final target = _shown;
     final next = !target.likedByMe;
 
-    setState(() {
-      _busy = true;
-      if (_post.resharedFrom != null) {
-        _post = _post;
-      }
-    });
+    setState(() => _busy = true);
 
     try {
       await SupabaseService.instance.setLike(target.id, next);
+      if (!mounted) return;
+
       setState(() {
         final updated = target.copyWith(
           likedByMe: next,
           likes: target.likes + (next ? 1 : -1),
         );
+
         _post = _post.resharedFrom != null
             ? Post(
                 id: _post.id,
@@ -75,6 +73,7 @@ class _PostCardState extends State<PostCard> {
               )
             : updated;
       });
+
       widget.onChanged?.call();
     } catch (_) {
       _snack('تعذّر تنفيذ الإعجاب');
@@ -110,7 +109,6 @@ class _PostCardState extends State<PostCard> {
 
   @override
   Widget build(BuildContext context) {
-    final t = Theme.of(context).textTheme;
     final p = _shown;
 
     return InkWell(
