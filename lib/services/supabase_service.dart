@@ -217,21 +217,32 @@ class SupabaseService {
         await _db.from('profiles').select('id').inFilter('handle', handles);
     if (users.isEmpty) return;
 
-    await _db.from('mentions').insert([
-      for (final u in users) {'post_id': postId, 'user_id': u['id']},
-    ]);
+    for (final u in users) {
+      try {
+        await _db
+            .from('mentions')
+            .insert({'post_id': postId, 'user_id': u['id']});
+      } catch (_) {
+        // المستخدم حاظر أو محظور — نتجاوزه بلا إيقاف النشر
+      }
+    }
   }
 
+  /// إعادة النشر — أو التراجع عنها
   Future<void> toggleReshare(String postId, bool on) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
 
     if (on) {
-      await _db.from('posts').upsert(
-        {'author_id': uid, 'reshare_of': postId},
-        onConflict: 'author_id,reshare_of',
-        ignoreDuplicates: true,
-      );
+      try {
+        await _db.from('posts').insert({
+          'author_id': uid,
+          'reshare_of': postId,
+        });
+      } on PostgrestException catch (e) {
+        // 23505 = مكرر: الريشير موجود مسبقًا
+        if (e.code != '23505') rethrow;
+      }
     } else {
       await _db
           .from('posts')
@@ -267,7 +278,6 @@ class SupabaseService {
     return re.allMatches(body).map((m) => m.group(1)!).toSet().toList();
   }
 
-  /// معرّف المستخدم من المعرّف النصي
   Future<String?> userIdByHandle(String handle) async {
     final row = await _db
         .from('profiles')
@@ -297,6 +307,7 @@ class SupabaseService {
     }
   }
 
+  /// هل حظرتُ هذا المستخدم
   Future<bool> isBlocked(String userId) async {
     final uid = currentUserId;
     if (uid == null) return false;
@@ -306,6 +317,21 @@ class SupabaseService {
         .select('blocked_id')
         .eq('blocker_id', uid)
         .eq('blocked_id', userId)
+        .maybeSingle();
+
+    return row != null;
+  }
+
+  /// هل حظرني هذا المستخدم
+  Future<bool> blockedMe(String userId) async {
+    final uid = currentUserId;
+    if (uid == null) return false;
+
+    final row = await _db
+        .from('blocks')
+        .select('blocker_id')
+        .eq('blocker_id', userId)
+        .eq('blocked_id', uid)
         .maybeSingle();
 
     return row != null;
@@ -457,7 +483,6 @@ class SupabaseService {
     }).toList();
   }
 
-  /// عدد الإشعارات غير المقروءة
   Future<int> unreadNotificationsCount() async {
     final uid = currentUserId;
     if (uid == null) return 0;
@@ -476,7 +501,6 @@ class SupabaseService {
     }
   }
 
-  /// تعليم الإشعارات كمقروءة
   Future<void> markNotificationsSeen() async {
     final uid = currentUserId;
     if (uid == null) return;
@@ -612,6 +636,7 @@ class SupabaseService {
     var isFollowing = false;
     var followsYou = false;
     var blocked = false;
+    var hasBlockedMe = false;
 
     if (me != null && me != userId) {
       final a = await _db
@@ -631,6 +656,7 @@ class SupabaseService {
       followsYou = b != null;
 
       blocked = await isBlocked(userId);
+      hasBlockedMe = await blockedMe(userId);
     }
 
     return UserProfile(
@@ -649,6 +675,7 @@ class SupabaseService {
       isFollowing: isFollowing,
       followsYou: followsYou,
       isBlocked: blocked,
+      blockedMe: hasBlockedMe,
     );
   }
 
