@@ -40,6 +40,10 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_TOKEN }}
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
           FASTLANE_SKIP_UPDATE_CHECK: 'true'
-        run: fastlane beta
+        run: |
+          # match يحتاج التوكن مشفَّرًا base64 بصيغة user:token
+          MATCH_GIT_BASIC_AUTHORIZATION=$(printf '%s' "x-access-token:$MATCH_GIT_TOKEN" | base64 | tr -d '\n')
+          export MATCH_GIT_BASIC_AUTHORIZATION
+          fastlane beta
