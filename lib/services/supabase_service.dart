@@ -17,6 +17,7 @@ class SupabaseService {
   SupabaseClient get _db => Supabase.instance.client;
 
   String? get currentUserId => _db.auth.currentUser?.id;
+  String? get currentEmail => _db.auth.currentUser?.email;
   bool get isSignedIn => currentUserId != null;
 
   static const _feedColumns = '*';
@@ -45,16 +46,21 @@ class SupabaseService {
 
   Future<void> signOut() => _db.auth.signOut();
 
+  /// تغيير البريد — يرسل رسالة تأكيد للبريد الجديد
+  Future<void> changeEmail(String newEmail) async {
+    await _db.auth.updateUser(UserAttributes(email: newEmail));
+  }
+
   // ── قراءة المنشورات ──────────────────────────────────────
 
   Post _post(Map<String, dynamic> row) =>
       Post.fromFeedRow(row, formatTime: formatTimeAgo);
 
-  /// الفيد العام أو منشورات من أتابعهم
   Future<List<Post>> fetchTimeline({bool followingOnly = false}) async {
     final uid = currentUserId;
 
-    var query = _db.from('posts_feed').select(_feedColumns).isFilter('reply_to', null);
+    var query =
+        _db.from('posts_feed').select(_feedColumns).isFilter('reply_to', null);
 
     if (followingOnly && uid != null) {
       final follows = await _db
@@ -93,7 +99,6 @@ class SupabaseService {
     return row == null ? null : _post(row);
   }
 
-  /// الردود على منشور
   Future<List<Post>> fetchReplies(String postId) async {
     final rows = await _db
         .from('posts_feed')
@@ -104,7 +109,6 @@ class SupabaseService {
     return rows.map<Post>(_post).toList();
   }
 
-  /// منشورات هاشتاق
   Future<List<Post>> fetchByHashtag(String tag) async {
     final clean = tag.replaceAll('#', '').toLowerCase();
 
@@ -126,12 +130,9 @@ class SupabaseService {
     return posts.map<Post>(_post).toList();
   }
 
-  /// أكثر الهاشتاقات تداولًا
   Future<List<({String tag, int count})>> fetchTrendingHashtags() async {
-    final rows = await _db
-        .from('post_hashtags')
-        .select('hashtags(tag)')
-        .limit(300);
+    final rows =
+        await _db.from('post_hashtags').select('hashtags(tag)').limit(300);
 
     final counts = <String, int>{};
     for (final r in rows) {
@@ -141,12 +142,35 @@ class SupabaseService {
       counts[tag] = (counts[tag] ?? 0) + 1;
     }
 
-    final list = counts.entries
-        .map((e) => (tag: e.key, count: e.value))
-        .toList()
-      ..sort((a, b) => b.count.compareTo(a.count));
+    final list =
+        counts.entries.map((e) => (tag: e.key, count: e.value)).toList()
+          ..sort((a, b) => b.count.compareTo(a.count));
 
     return list.take(20).toList();
+  }
+
+  /// المنشورات المحفوظة في المفضلة
+  Future<List<Post>> fetchBookmarks() async {
+    final uid = currentUserId;
+    if (uid == null) return [];
+
+    final rows = await _db
+        .from('bookmarks')
+        .select('post_id')
+        .eq('user_id', uid)
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    final ids = rows.map((e) => e['post_id'] as String).toList();
+    if (ids.isEmpty) return [];
+
+    final posts = await _db
+        .from('posts_feed')
+        .select(_feedColumns)
+        .inFilter('id', ids)
+        .order('created_at', ascending: false);
+
+    return posts.map<Post>(_post).toList();
   }
 
   // ── النشر والتفاعل ───────────────────────────────────────
@@ -188,16 +212,16 @@ class SupabaseService {
     ]);
   }
 
-  /// إعادة النشر — أو التراجع عنها
   Future<void> toggleReshare(String postId, bool on) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
 
     if (on) {
-      await _db.from('posts').insert({
-        'author_id': uid,
-        'reshare_of': postId,
-      });
+      await _db.from('posts').upsert(
+        {'author_id': uid, 'reshare_of': postId},
+        onConflict: 'author_id,reshare_of',
+        ignoreDuplicates: true,
+      );
     } else {
       await _db
           .from('posts')
@@ -212,12 +236,25 @@ class SupabaseService {
     if (uid == null) throw StateError('غير مسجّل الدخول');
 
     if (liked) {
-      await _db
-          .from('likes')
-          .upsert({'post_id': postId, 'user_id': uid});
+      await _db.from('likes').upsert({'post_id': postId, 'user_id': uid});
     } else {
       await _db
           .from('likes')
+          .delete()
+          .eq('post_id', postId)
+          .eq('user_id', uid);
+    }
+  }
+
+  Future<void> setBookmark(String postId, bool on) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    if (on) {
+      await _db.from('bookmarks').upsert({'post_id': postId, 'user_id': uid});
+    } else {
+      await _db
+          .from('bookmarks')
           .delete()
           .eq('post_id', postId)
           .eq('user_id', uid);
@@ -228,14 +265,76 @@ class SupabaseService {
     await _db.from('posts').delete().eq('id', postId);
   }
 
+  /// رابط المنشور للمشاركة
+  String postLink(String postId) => 'https://share.sa/p/$postId';
+
   static List<String> extractHandles(String body) {
     final re = RegExp(r'@([a-zA-Z0-9._]{3,20})');
     return re.allMatches(body).map((m) => m.group(1)!).toSet().toList();
   }
 
+  // ── الحظر ────────────────────────────────────────────────
+
+  Future<void> setBlock(String userId, bool on) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    if (on) {
+      await _db
+          .from('blocks')
+          .upsert({'blocker_id': uid, 'blocked_id': userId});
+    } else {
+      await _db
+          .from('blocks')
+          .delete()
+          .eq('blocker_id', uid)
+          .eq('blocked_id', userId);
+    }
+  }
+
+  Future<bool> isBlocked(String userId) async {
+    final uid = currentUserId;
+    if (uid == null) return false;
+
+    final row = await _db
+        .from('blocks')
+        .select('blocked_id')
+        .eq('blocker_id', uid)
+        .eq('blocked_id', userId)
+        .maybeSingle();
+
+    return row != null;
+  }
+
+  Future<List<UserProfile>> fetchBlockedUsers() async {
+    final uid = currentUserId;
+    if (uid == null) return [];
+
+    final rows = await _db
+        .from('blocks')
+        .select('blocked:profiles!blocks_blocked_id_fkey(id, handle, name, avatar_url, verified)')
+        .eq('blocker_id', uid);
+
+    return rows
+        .map((r) => r['blocked'])
+        .whereType<Map<String, dynamic>>()
+        .map<UserProfile>((b) => UserProfile(
+              id: b['id'].toString(),
+              name: b['name'] as String? ?? '',
+              handle: b['handle'] as String? ?? '',
+              bio: '',
+              avatarUrl: b['avatar_url'] as String?,
+              verified: b['verified'] as bool? ?? false,
+              followers: 0,
+              following: 0,
+              posts: 0,
+              isBlocked: true,
+            ))
+        .toList();
+  }
+
   // ── رفع الوسائط ──────────────────────────────────────────
 
-  /// يرفع ملفًا ويعيد رابطه العام
   Future<({String url, String type})> uploadMedia(File file) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
@@ -255,7 +354,6 @@ class SupabaseService {
     return (url: url, type: isVideo ? 'video' : 'image');
   }
 
-  /// يرفع صورة رمزية ويحدّث الملف الشخصي
   Future<String> uploadAvatar(File file) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
@@ -439,7 +537,9 @@ class SupabaseService {
   Future<UserProfile?> fetchProfile(String userId) async {
     final row = await _db
         .from('profiles')
-        .select('id, handle, name, bio, location, avatar_url, verified, created_at')
+        .select(
+          'id, handle, name, bio, location, website, avatar_url, verified, created_at',
+        )
         .eq('id', userId)
         .maybeSingle();
 
@@ -449,11 +549,19 @@ class SupabaseService {
         await _db.from('follows').count().eq('following_id', userId);
     final following =
         await _db.from('follows').count().eq('follower_id', userId);
-    final posts = await _db.from('posts').count().eq('author_id', userId);
+
+    // المنشورات الأصلية فقط — بلا ريشير ولا ردود
+    final posts = await _db
+        .from('posts')
+        .count()
+        .eq('author_id', userId)
+        .isFilter('reshare_of', null)
+        .isFilter('reply_to', null);
 
     final me = currentUserId;
     var isFollowing = false;
     var followsYou = false;
+    var blocked = false;
 
     if (me != null && me != userId) {
       final a = await _db
@@ -471,6 +579,8 @@ class SupabaseService {
           .eq('following_id', me)
           .maybeSingle();
       followsYou = b != null;
+
+      blocked = await isBlocked(userId);
     }
 
     return UserProfile(
@@ -479,6 +589,7 @@ class SupabaseService {
       handle: row['handle'] as String? ?? '',
       bio: row['bio'] as String? ?? '',
       location: row['location'] as String?,
+      website: row['website'] as String?,
       avatarUrl: row['avatar_url'] as String?,
       verified: row['verified'] as bool? ?? false,
       joined: formatJoined(row['created_at'] as String?),
@@ -487,28 +598,44 @@ class SupabaseService {
       posts: posts,
       isFollowing: isFollowing,
       followsYou: followsYou,
+      isBlocked: blocked,
     );
   }
 
-  /// ملفي أنا
   Future<UserProfile?> fetchMyProfile() async {
     final uid = currentUserId;
     if (uid == null) return null;
     return fetchProfile(uid);
   }
 
+  /// هل المعرّف متاح؟
+  Future<bool> isHandleAvailable(String handle) async {
+    final uid = currentUserId;
+    final row = await _db
+        .from('profiles')
+        .select('id')
+        .eq('handle', handle.toLowerCase())
+        .maybeSingle();
+
+    return row == null || row['id'] == uid;
+  }
+
   Future<void> updateProfile({
     String? name,
+    String? handle,
     String? bio,
     String? location,
+    String? website,
   }) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
 
     final data = <String, dynamic>{};
     if (name != null) data['name'] = name;
+    if (handle != null) data['handle'] = handle.toLowerCase();
     if (bio != null) data['bio'] = bio;
     if (location != null) data['location'] = location;
+    if (website != null) data['website'] = website;
     if (data.isEmpty) return;
 
     await _db.from('profiles').update(data).eq('id', uid);
@@ -531,16 +658,18 @@ class SupabaseService {
     }
   }
 
-  /// البحث عن مستخدمين بالاسم أو المعرّف
   Future<List<UserProfile>> searchUsers(String query) async {
     final q = query.replaceAll('@', '').trim();
-    if (q.isEmpty) return [];
 
-    final rows = await _db
+    var builder = _db
         .from('profiles')
-        .select('id, handle, name, bio, avatar_url, verified')
-        .or('handle.ilike.%$q%,name.ilike.%$q%')
-        .limit(20);
+        .select('id, handle, name, bio, avatar_url, verified');
+
+    if (q.isNotEmpty) {
+      builder = builder.or('handle.ilike.%$q%,name.ilike.%$q%');
+    }
+
+    final rows = await builder.limit(20);
 
     return rows
         .map<UserProfile>((r) => UserProfile(
