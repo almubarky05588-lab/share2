@@ -3,28 +3,18 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 
-/// نتيجة النشر — تُعاد إلى الهيكل
-class ComposeResult {
-  const ComposeResult({
-    required this.body,
-    this.mediaFile,
-  });
-
-  final String body;
-  final File? mediaFile;
-}
-
-/// نشر جديد (share)
+/// نشر جديد أو رد على منشور
 class ComposeScreen extends StatefulWidget {
   const ComposeScreen({super.key, this.replyTo});
 
-  /// معرّف المنشور عند الرد
-  final String? replyTo;
+  /// المنشور المردود عليه — إن وُجد
+  final Post? replyTo;
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -41,14 +31,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
   bool _sending = false;
 
   UserProfile? _me;
-  List<UserProfile> _suggestions = const [];
+
+  bool get _isReply => widget.replyTo != null;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(() => setState(() {}));
     _loadMe();
-    _loadSuggestions();
   }
 
   @override
@@ -63,15 +53,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
     setState(() => _me = me);
   }
 
-  Future<void> _loadSuggestions() async {
-    final users = await SupabaseService.instance.searchUsers('');
-    if (!mounted) return;
-    setState(() => _suggestions = users.take(5).toList());
-  }
-
   int get _remaining => _maxLength - _controller.text.characters.length;
 
-  bool get _canShare =>
+  bool get _canSend =>
       (_controller.text.trim().isNotEmpty || _media != null) &&
       _remaining >= 0 &&
       !_sending;
@@ -114,17 +98,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
     });
   }
 
-  void _insertMention(String handle) {
-    final text = _controller.text;
-    final needsSpace = text.isNotEmpty && !text.endsWith(' ');
-    _controller.text = '$text${needsSpace ? ' ' : ''}@$handle ';
-    _controller.selection = TextSelection.fromPosition(
-      TextPosition(offset: _controller.text.length),
-    );
-  }
-
   Future<void> _submit() async {
-    if (!_canShare) return;
+    if (!_canSend) return;
     setState(() => _sending = true);
 
     try {
@@ -139,7 +114,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
       await SupabaseService.instance.createPost(
         _controller.text.trim(),
-        replyTo: widget.replyTo,
+        replyTo: widget.replyTo?.id,
         mediaUrl: url,
         mediaType: type,
       );
@@ -150,7 +125,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
       if (!mounted) return;
       setState(() => _sending = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذّر نشر المنشور')),
+        SnackBar(
+          content: Text(_isReply ? 'تعذّر إرسال الرد' : 'تعذّر نشر المنشور'),
+        ),
       );
     }
   }
@@ -167,14 +144,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  _replyScope(context),
+                  if (_isReply) _originalPost(context, widget.replyTo!),
+                  if (!_isReply) _replyScope(context),
                   _editor(context),
                   if (_media != null) _preview(),
-                  const Divider(height: 24, color: AppColors.border),
-                  if (_suggestions.isNotEmpty) ...[
-                    _suggestionsHeader(context),
-                    ..._suggestions.map((s) => _suggestionTile(context, s)),
-                  ],
                 ],
               ),
             ),
@@ -189,19 +162,30 @@ class _ComposeScreenState extends State<ComposeScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        textDirection: TextDirection.rtl,
         children: [
+          InkWell(
+            onTap: () => Navigator.of(context).maybePop(),
+            child: Text(
+              'إلغاء',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.text,
+                  ),
+            ),
+          ),
+          const Spacer(),
           Opacity(
-            opacity: _canShare ? 1 : 0.45,
+            opacity: _canSend ? 1 : 0.45,
             child: Material(
               color: AppColors.brand,
               borderRadius: BorderRadius.circular(19),
               child: InkWell(
                 borderRadius: BorderRadius.circular(19),
-                onTap: _canShare ? _submit : null,
+                onTap: _canSend ? _submit : null,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 22, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
                   child: _sending
                       ? const SizedBox(
                           width: 18,
@@ -212,7 +196,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                           ),
                         )
                       : Text(
-                          widget.replyTo == null ? 'share' : 'رد',
+                          _isReply ? 'رد' : 'share',
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -224,15 +208,99 @@ class _ComposeScreenState extends State<ComposeScreen> {
               ),
             ),
           ),
-          InkWell(
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Text(
-              'إلغاء',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.text,
+        ],
+      ),
+    );
+  }
+
+  /// المنشور الأصلي أعلى شاشة الرد
+  Widget _originalPost(BuildContext context, Post p) {
+    final t = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Column(
+                children: [
+                  AvatarCircle(
+                    initial: p.initial,
+                    seed: p.avatarSeed,
+                    imageUrl: p.avatarUrl,
+                    size: 42,
                   ),
-            ),
+                  const SizedBox(height: 6),
+                  Container(
+                    width: 2,
+                    height: 42,
+                    color: AppColors.border,
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      textDirection: TextDirection.rtl,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            p.authorName,
+                            overflow: TextOverflow.ellipsis,
+                            style: t.titleMedium?.copyWith(fontSize: 14),
+                          ),
+                        ),
+                        if (p.verified) ...[
+                          const SizedBox(width: 5),
+                          const Icon(Icons.verified,
+                              size: 14, color: AppColors.blue),
+                        ],
+                        const SizedBox(width: 5),
+                        Text('‎@${p.handle}', style: t.bodySmall),
+                        const SizedBox(width: 5),
+                        Text('· ${p.timeAgo}', style: t.bodySmall),
+                      ],
+                    ),
+                    if (p.body.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          p.body,
+                          textAlign: TextAlign.right,
+                          style: t.bodyMedium?.copyWith(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Text.rich(
+                        TextSpan(
+                          style: t.bodySmall,
+                          children: [
+                            const TextSpan(text: 'ردًّا على '),
+                            TextSpan(
+                              text: '‎@${p.handle}',
+                              style: t.bodySmall
+                                  ?.copyWith(color: AppColors.brand),
+                            ),
+                          ],
+                        ),
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -271,10 +339,17 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   Widget _editor(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: EdgeInsets.fromLTRB(16, _isReply ? 6 : 0, 16, 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          AvatarCircle(
+            initial: _me?.initial ?? 'م',
+            seed: AppColors.brand,
+            imageUrl: _me?.avatarUrl,
+            size: AppSizes.avatarLarge,
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: TextField(
               controller: _controller,
@@ -288,20 +363,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   ?.copyWith(fontSize: 17),
               decoration: InputDecoration(
                 border: InputBorder.none,
-                hintText: 'وش يدور في بالك؟',
+                hintText: _isReply ? 'اكتب ردّك…' : 'وش يدور في بالك؟',
                 hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontSize: 17,
                       color: AppColors.textMuted,
                     ),
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          AvatarCircle(
-            initial: _me?.initial ?? 'م',
-            seed: AppColors.brand,
-            imageUrl: _me?.avatarUrl,
-            size: AppSizes.avatarLarge,
           ),
         ],
       ),
@@ -325,8 +393,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                     child: const Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.videocam,
-                            size: 40, color: Colors.white),
+                        Icon(Icons.videocam, size: 40, color: Colors.white),
                         SizedBox(height: 8),
                         Text('فيديو مرفق',
                             style: TextStyle(color: Colors.white)),
@@ -361,69 +428,6 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
-  Widget _suggestionsHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          Text(
-            'اقتراحات المنشن',
-            style: Theme.of(context)
-                .textTheme
-                .labelMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(width: 7),
-          const Icon(Icons.alternate_email,
-              size: 15, color: AppColors.textMuted),
-        ],
-      ),
-    );
-  }
-
-  Widget _suggestionTile(BuildContext context, UserProfile s) {
-    final t = Theme.of(context).textTheme;
-
-    return InkWell(
-      onTap: () => _insertMention(s.handle),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          children: [
-            const Icon(Icons.add,
-                size: AppSizes.iconSmall, color: AppColors.textMuted),
-            const Spacer(),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(s.name, style: t.titleMedium?.copyWith(fontSize: 14)),
-                    if (s.verified) ...[
-                      const SizedBox(width: 5),
-                      const Icon(Icons.verified,
-                          size: 14, color: AppColors.blue),
-                    ],
-                  ],
-                ),
-                Text('‎@${s.handle}', style: t.bodySmall),
-              ],
-            ),
-            const SizedBox(width: 10),
-            AvatarCircle(
-              initial: s.initial,
-              seed: s.avatarSeed,
-              imageUrl: s.avatarUrl,
-              size: 36,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _toolbar(BuildContext context) {
     final over = _remaining < 0;
 
@@ -433,23 +437,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        textDirection: TextDirection.rtl,
         children: [
+          _toolIcon(Icons.image_outlined, _pickImage),
+          const SizedBox(width: 20),
+          _toolIcon(Icons.camera_alt_outlined, _pickCamera),
+          const SizedBox(width: 20),
+          _toolIcon(Icons.videocam_outlined, _pickVideo),
+          const Spacer(),
           Text(
             '$_remaining',
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: over ? AppColors.like : AppColors.textMuted,
                   fontWeight: FontWeight.w700,
                 ),
-          ),
-          Row(
-            children: [
-              _toolIcon(Icons.videocam_outlined, _pickVideo),
-              const SizedBox(width: 20),
-              _toolIcon(Icons.camera_alt_outlined, _pickCamera),
-              const SizedBox(width: 20),
-              _toolIcon(Icons.image_outlined, _pickImage),
-            ],
           ),
         ],
       ),
