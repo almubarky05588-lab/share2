@@ -5,9 +5,9 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<string>ar</string>
 	<key>CFBundleDisplayName</key>
-	<string>Share App</string>
+	<string>share</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>share_app</string>
+	<string>share</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -24,6 +24,19 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ar</string>
+		<string>en</string>
+	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>يحتاج share للوصول إلى صورك لإرفاقها في منشوراتك وتعيين صورتك الشخصية.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>يحتاج share لحفظ الصور في مكتبتك.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>يحتاج share للوصول إلى الكاميرا لالتقاط صور ومقاطع تنشرها.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>يحتاج share للوصول إلى الميكروفون لتسجيل الصوت مع مقاطع الفيديو.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
@@ -56,15 +69,11 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>
