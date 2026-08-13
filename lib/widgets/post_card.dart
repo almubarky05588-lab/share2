@@ -165,7 +165,8 @@ class _PostCardState extends State<PostCard> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text('حظر ${target.authorName}'),
-        content: const Text('لن تظهر لك منشوراته، ولن يستطيع ذكرك أو الرد عليك.'),
+        content:
+            const Text('لن تظهر لك منشوراته، ولن يستطيع ذكرك أو الرد عليك.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -381,41 +382,34 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
+  /// الاسم واليوزر والوقت يمين — يلتفّون لسطر ثانٍ بدل الاقتطاع
   Widget _header(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
     return Row(
       textDirection: TextDirection.rtl,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Flexible(
+        Expanded(
           child: GestureDetector(
             onTap: () => widget.onOpenProfile?.call(p.authorId),
-            child: Row(
+            child: Wrap(
               textDirection: TextDirection.rtl,
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 5,
+              runSpacing: 2,
               children: [
-                Flexible(
-                  child: Text(
-                    p.authorName,
-                    overflow: TextOverflow.ellipsis,
-                    style: t.titleMedium,
-                  ),
-                ),
-                if (p.verified) ...[
-                  const SizedBox(width: 5),
-                  const Icon(Icons.verified, size: 15, color: AppColors.blue),
-                ],
-                const SizedBox(width: 5),
+                Text(p.authorName, style: t.titleMedium),
+                if (p.verified)
+                  const Icon(Icons.verified,
+                      size: 15, color: AppColors.blue),
                 Text('‎@${p.handle}', style: t.bodySmall),
-                const SizedBox(width: 5),
-                Text('·', style: t.bodySmall),
-                const SizedBox(width: 5),
-                Text(p.timeAgo, style: t.bodySmall),
+                Text('· ${p.timeAgo}', style: t.bodySmall),
               ],
             ),
           ),
         ),
-        const Spacer(),
+        const SizedBox(width: 6),
         InkWell(
           onTap: _openMenu,
           borderRadius: BorderRadius.circular(14),
