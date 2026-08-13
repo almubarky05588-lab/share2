@@ -1,24 +1,30 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../models/user_profile.dart';
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 
-/// اقتراح منشن أثناء الكتابة
-class _MentionSuggestion {
-  const _MentionSuggestion({
-    required this.name,
-    required this.handle,
-    this.verified = false,
+/// نتيجة النشر — تُعاد إلى الهيكل
+class ComposeResult {
+  const ComposeResult({
+    required this.body,
+    this.mediaFile,
   });
 
-  final String name;
-  final String handle;
-  final bool verified;
+  final String body;
+  final File? mediaFile;
 }
 
-/// نشر جديد (share) — الشاشة ٦ من التصميم
+/// نشر جديد (share)
 class ComposeScreen extends StatefulWidget {
-  const ComposeScreen({super.key});
+  const ComposeScreen({super.key, this.replyTo});
+
+  /// معرّف المنشور عند الرد
+  final String? replyTo;
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -28,25 +34,21 @@ class _ComposeScreenState extends State<ComposeScreen> {
   static const _maxLength = 280;
 
   final _controller = TextEditingController();
+  final _picker = ImagePicker();
 
-  static const _suggestions = <_MentionSuggestion>[
-    _MentionSuggestion(
-      name: 'نورة السالم',
-      handle: 'noura_s',
-      verified: true,
-    ),
-    _MentionSuggestion(
-      name: 'استوديو مِداد',
-      handle: 'midad.studio',
-      verified: true,
-    ),
-    _MentionSuggestion(name: 'نايف الشمري', handle: 'noor.dev'),
-  ];
+  File? _media;
+  bool _isVideo = false;
+  bool _sending = false;
+
+  UserProfile? _me;
+  List<UserProfile> _suggestions = const [];
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(() => setState(() {}));
+    _loadMe();
+    _loadSuggestions();
   }
 
   @override
@@ -55,10 +57,62 @@ class _ComposeScreenState extends State<ComposeScreen> {
     super.dispose();
   }
 
+  Future<void> _loadMe() async {
+    final me = await SupabaseService.instance.fetchMyProfile();
+    if (!mounted) return;
+    setState(() => _me = me);
+  }
+
+  Future<void> _loadSuggestions() async {
+    final users = await SupabaseService.instance.searchUsers('');
+    if (!mounted) return;
+    setState(() => _suggestions = users.take(5).toList());
+  }
+
   int get _remaining => _maxLength - _controller.text.characters.length;
 
   bool get _canShare =>
-      _controller.text.trim().isNotEmpty && _remaining >= 0;
+      (_controller.text.trim().isNotEmpty || _media != null) &&
+      _remaining >= 0 &&
+      !_sending;
+
+  Future<void> _pickImage() async {
+    final x = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      imageQuality: 88,
+    );
+    if (x == null) return;
+    setState(() {
+      _media = File(x.path);
+      _isVideo = false;
+    });
+  }
+
+  Future<void> _pickCamera() async {
+    final x = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1920,
+      imageQuality: 88,
+    );
+    if (x == null) return;
+    setState(() {
+      _media = File(x.path);
+      _isVideo = false;
+    });
+  }
+
+  Future<void> _pickVideo() async {
+    final x = await _picker.pickVideo(
+      source: ImageSource.gallery,
+      maxDuration: const Duration(minutes: 3),
+    );
+    if (x == null) return;
+    setState(() {
+      _media = File(x.path);
+      _isVideo = true;
+    });
+  }
 
   void _insertMention(String handle) {
     final text = _controller.text;
@@ -69,6 +123,38 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
+  Future<void> _submit() async {
+    if (!_canShare) return;
+    setState(() => _sending = true);
+
+    try {
+      String? url;
+      String? type;
+
+      if (_media != null) {
+        final r = await SupabaseService.instance.uploadMedia(_media!);
+        url = r.url;
+        type = r.type;
+      }
+
+      await SupabaseService.instance.createPost(
+        _controller.text.trim(),
+        replyTo: widget.replyTo,
+        mediaUrl: url,
+        mediaType: type,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذّر نشر المنشور')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -77,15 +163,19 @@ class _ComposeScreenState extends State<ComposeScreen> {
         child: Column(
           children: [
             _header(context),
-            _replyScope(context),
-            _editor(context),
-            const Divider(height: 1, color: AppColors.border),
-            _suggestionsHeader(context),
             Expanded(
-              child: ListView.builder(
+              child: ListView(
                 padding: EdgeInsets.zero,
-                itemCount: _suggestions.length,
-                itemBuilder: (_, i) => _suggestionTile(context, _suggestions[i]),
+                children: [
+                  _replyScope(context),
+                  _editor(context),
+                  if (_media != null) _preview(),
+                  const Divider(height: 24, color: AppColors.border),
+                  if (_suggestions.isNotEmpty) ...[
+                    _suggestionsHeader(context),
+                    ..._suggestions.map((s) => _suggestionTile(context, s)),
+                  ],
+                ],
               ),
             ),
             _toolbar(context),
@@ -108,21 +198,28 @@ class _ComposeScreenState extends State<ComposeScreen> {
               borderRadius: BorderRadius.circular(19),
               child: InkWell(
                 borderRadius: BorderRadius.circular(19),
-                onTap: _canShare
-                    ? () => Navigator.of(context).maybePop(_controller.text)
-                    : null,
-                child: const Padding(
-                  padding:
-                      EdgeInsets.symmetric(horizontal: 22, vertical: 8),
-                  child: Text(
-                    'share',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      height: 1.55,
-                      color: AppColors.background,
-                    ),
-                  ),
+                onTap: _canShare ? _submit : null,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 22, vertical: 8),
+                  child: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.background,
+                          ),
+                        )
+                      : Text(
+                          widget.replyTo == null ? 'share' : 'رد',
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            height: 1.55,
+                            color: AppColors.background,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -156,11 +253,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.public,
-                size: 15,
-                color: AppColors.brand,
-              ),
+              const Icon(Icons.public, size: 15, color: AppColors.brand),
               const SizedBox(width: 6),
               Text(
                 'الجميع يمكنهم الرد',
@@ -168,12 +261,6 @@ class _ComposeScreenState extends State<ComposeScreen> {
                       color: AppColors.brand,
                       fontWeight: FontWeight.w600,
                     ),
-              ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.keyboard_arrow_down,
-                size: 15,
-                color: AppColors.brand,
               ),
             ],
           ),
@@ -194,10 +281,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
               autofocus: true,
               textAlign: TextAlign.right,
               minLines: 3,
-              maxLines: 6,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontSize: 17,
-                  ),
+              maxLines: 8,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(fontSize: 17),
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: 'وش يدور في بالك؟',
@@ -209,10 +297,64 @@ class _ComposeScreenState extends State<ComposeScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          const AvatarCircle(
-            initial: 'م',
+          AvatarCircle(
+            initial: _me?.initial ?? 'م',
             seed: AppColors.brand,
+            imageUrl: _me?.avatarUrl,
             size: AppSizes.avatarLarge,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _preview() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Stack(
+        alignment: Alignment.topLeft,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppSizes.radiusMedia),
+            child: _isVideo
+                ? Container(
+                    height: 200,
+                    width: double.infinity,
+                    color: AppColors.text,
+                    alignment: Alignment.center,
+                    child: const Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.videocam,
+                            size: 40, color: Colors.white),
+                        SizedBox(height: 8),
+                        Text('فيديو مرفق',
+                            style: TextStyle(color: Colors.white)),
+                      ],
+                    ),
+                  )
+                : Image.file(
+                    _media!,
+                    height: 220,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Material(
+              color: Colors.black54,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () => setState(() => _media = null),
+                child: const SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: Icon(Icons.close, size: 18, color: Colors.white),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -221,28 +363,26 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   Widget _suggestionsHeader(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
           Text(
             'اقتراحات المنشن',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(context)
+                .textTheme
+                .labelMedium
+                ?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(width: 7),
-          const Icon(
-            Icons.alternate_email,
-            size: 15,
-            color: AppColors.textMuted,
-          ),
+          const Icon(Icons.alternate_email,
+              size: 15, color: AppColors.textMuted),
         ],
       ),
     );
   }
 
-  Widget _suggestionTile(BuildContext context, _MentionSuggestion s) {
+  Widget _suggestionTile(BuildContext context, UserProfile s) {
     final t = Theme.of(context).textTheme;
 
     return InkWell(
@@ -251,11 +391,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
-            const Icon(
-              Icons.add,
-              size: AppSizes.iconSmall,
-              color: AppColors.textMuted,
-            ),
+            const Icon(Icons.add,
+                size: AppSizes.iconSmall, color: AppColors.textMuted),
             const Spacer(),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -263,17 +400,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      s.name,
-                      style: t.titleMedium?.copyWith(fontSize: 14),
-                    ),
+                    Text(s.name, style: t.titleMedium?.copyWith(fontSize: 14)),
                     if (s.verified) ...[
                       const SizedBox(width: 5),
-                      const Icon(
-                        Icons.verified,
-                        size: 14,
-                        color: AppColors.blue,
-                      ),
+                      const Icon(Icons.verified,
+                          size: 14, color: AppColors.blue),
                     ],
                   ],
                 ),
@@ -282,8 +413,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
             ),
             const SizedBox(width: 10),
             AvatarCircle(
-              initial: s.name.characters.first,
-              seed: AppColors.brand,
+              initial: s.initial,
+              seed: s.avatarSeed,
+              imageUrl: s.avatarUrl,
               size: 36,
             ),
           ],
@@ -312,15 +444,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
           ),
           Row(
             children: [
-              _toolIcon(Icons.location_on_outlined),
-              const SizedBox(width: 18),
-              _gifChip(context),
-              const SizedBox(width: 18),
-              _toolIcon(Icons.poll_outlined),
-              const SizedBox(width: 18),
-              _toolIcon(Icons.camera_alt_outlined),
-              const SizedBox(width: 18),
-              _toolIcon(Icons.image_outlined),
+              _toolIcon(Icons.videocam_outlined, _pickVideo),
+              const SizedBox(width: 20),
+              _toolIcon(Icons.camera_alt_outlined, _pickCamera),
+              const SizedBox(width: 20),
+              _toolIcon(Icons.image_outlined, _pickImage),
             ],
           ),
         ],
@@ -328,25 +456,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
-  Widget _toolIcon(IconData icon) {
-    return Icon(icon, size: 21, color: AppColors.brand);
-  }
-
-  Widget _gifChip(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: AppColors.brand, width: 1.4),
-      ),
-      child: const Text(
-        'GIF',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          height: 1.3,
-          color: AppColors.brand,
-        ),
+  Widget _toolIcon(IconData icon, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(icon, size: 23, color: AppColors.brand),
       ),
     );
   }
