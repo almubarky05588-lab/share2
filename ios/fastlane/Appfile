@@ -1,0 +1,7 @@
+# معرّف التطبيق في App Store Connect
+app_identifier "sa.almubarky.shareApp"
+
+# معرّف فريق Apple Developer
+team_id "5V6TC85KRL"
+
+# المصادقة عبر مفتاح App Store Connect API — لا حاجة لبريد Apple ID
