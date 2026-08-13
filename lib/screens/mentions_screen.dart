@@ -7,7 +7,10 @@ import '../widgets/share_bottom_nav.dart';
 
 /// المنشن والإشعارات — الشاشة ٢ من التصميم
 class MentionsScreen extends StatefulWidget {
-  const MentionsScreen({super.key});
+  const MentionsScreen({super.key, this.showChrome = true});
+
+  /// false عند العرض داخل AppShell — شريط التنقل يأتي من الهيكل
+  final bool showChrome;
 
   @override
   State<MentionsScreen> createState() => _MentionsScreenState();
@@ -100,7 +103,8 @@ class _MentionsScreenState extends State<MentionsScreen> {
           ],
         ),
       ),
-      bottomNavigationBar: const ShareBottomNav(currentIndex: 2),
+      bottomNavigationBar:
+          widget.showChrome ? const ShareBottomNav(currentIndex: 2) : null,
     );
   }
 
