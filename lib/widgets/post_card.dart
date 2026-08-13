@@ -7,6 +7,7 @@ import '../screens/media_viewer_screen.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import 'avatar_circle.dart';
+import 'inline_video.dart';
 
 /// بطاقة منشور
 class PostCard extends StatefulWidget {
@@ -164,7 +165,7 @@ class _PostCardState extends State<PostCard> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text('حظر ${target.authorName}'),
-        content: const Text('لن تظهر لك منشوراته، ولن يتابع أحدكما الآخر.'),
+        content: const Text('لن تظهر لك منشوراته، ولن يستطيع ذكرك أو الرد عليك.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -380,7 +381,6 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  /// الاسم والمعرّف والوقت يمين، والنقاط الثلاث يسار
   Widget _header(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
@@ -429,7 +429,6 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  /// نص المنشور مع منشن وهاشتاق قابلين للضغط
   Widget _body(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
@@ -475,77 +474,56 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _media(Post p) {
+    if (p.isVideo) {
+      return InlineVideo(
+        url: p.mediaUrl!,
+        postId: p.id,
+        onTap: _openMedia,
+      );
+    }
+
     return GestureDetector(
       onTap: _openMedia,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(AppSizes.radiusMedia),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            if (p.isVideo)
-              Container(
-                width: double.infinity,
-                height: 220,
-                color: AppColors.text,
-              )
-            else
-              Image.network(
-                p.mediaUrl!,
-                width: double.infinity,
-                height: 240,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
+        child: Image.network(
+          p.mediaUrl!,
+          width: double.infinity,
+          height: 240,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            height: 240,
+            color: AppColors.border,
+            alignment: Alignment.center,
+            child: const Icon(Icons.broken_image_outlined,
+                color: AppColors.textMuted),
+          ),
+          loadingBuilder: (context, child, progress) => progress == null
+              ? child
+              : Container(
                   height: 240,
-                  color: AppColors.border,
+                  color: AppColors.border.withOpacity(0.4),
                   alignment: Alignment.center,
-                  child: const Icon(Icons.broken_image_outlined,
-                      color: AppColors.textMuted),
+                  child: const CircularProgressIndicator(
+                      color: AppColors.brand, strokeWidth: 2),
                 ),
-                loadingBuilder: (context, child, progress) => progress == null
-                    ? child
-                    : Container(
-                        height: 240,
-                        color: AppColors.border.withOpacity(0.4),
-                        alignment: Alignment.center,
-                        child: const CircularProgressIndicator(
-                            color: AppColors.brand, strokeWidth: 2),
-                      ),
-              ),
-            if (p.isVideo)
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.play_arrow,
-                    color: AppColors.text, size: 34),
-              ),
-          ],
         ),
       ),
     );
   }
 
+  /// من اليمين: الرد · إعادة النشر · المفضلة · المشاهدات
   Widget _actions(BuildContext context, Post p) {
     return Row(
+      textDirection: TextDirection.rtl,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         _action(
           context,
-          icon: Icons.bar_chart,
-          count: p.views,
+          icon: Icons.mode_comment_outlined,
+          count: p.comments,
           color: AppColors.textMuted,
-          onTap: () {},
-        ),
-        _action(
-          context,
-          icon: p.likedByMe ? Icons.favorite : Icons.favorite_border,
-          count: p.likes,
-          color: p.likedByMe ? AppColors.like : AppColors.textMuted,
-          active: p.likedByMe,
-          onTap: _toggleLike,
+          onTap: () => widget.onReply?.call(p),
         ),
         _action(
           context,
@@ -557,10 +535,18 @@ class _PostCardState extends State<PostCard> {
         ),
         _action(
           context,
-          icon: Icons.mode_comment_outlined,
-          count: p.comments,
+          icon: p.likedByMe ? Icons.favorite : Icons.favorite_border,
+          count: p.likes,
+          color: p.likedByMe ? AppColors.like : AppColors.textMuted,
+          active: p.likedByMe,
+          onTap: _toggleLike,
+        ),
+        _action(
+          context,
+          icon: Icons.bar_chart,
+          count: p.views,
           color: AppColors.textMuted,
-          onTap: () => widget.onReply?.call(p),
+          onTap: () {},
         ),
       ],
     );
@@ -580,6 +566,7 @@ class _PostCardState extends State<PostCard> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
+          textDirection: TextDirection.rtl,
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: AppSizes.iconSmall, color: color),
