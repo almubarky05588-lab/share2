@@ -15,11 +15,11 @@ class MentionsScreen extends StatefulWidget {
   final bool showChrome;
 
   @override
-  State<MentionsScreen> createState() => _MentionsScreenState();
+  State<MentionsScreen> createState() => MentionsScreenState();
 }
 
-class _MentionsScreenState extends State<MentionsScreen> {
-  int _tab = 0; // 0 الكل · 1 المنشن · 2 متابعات
+class MentionsScreenState extends State<MentionsScreen> {
+  int _tab = 0; // 0 الكل · 1 المنشن · 2 التفاعلات
 
   bool _loading = true;
   List<NotificationItem> _items = const [];
@@ -29,6 +29,9 @@ class _MentionsScreenState extends State<MentionsScreen> {
     super.initState();
     _load();
   }
+
+  /// يُستدعى من الهيكل عند فتح التبويب
+  void reload() => _load();
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -49,14 +52,13 @@ class _MentionsScreenState extends State<MentionsScreen> {
   List<NotificationItem> get _visible {
     switch (_tab) {
       case 1:
-        return _items
-            .where((e) =>
-                e.type == NotificationType.mention ||
-                e.type == NotificationType.commentMention)
-            .toList();
+        return _items.where((e) => e.isMention).toList();
       case 2:
         return _items
-            .where((e) => e.type == NotificationType.follow)
+            .where((e) =>
+                e.type == NotificationType.like ||
+                e.type == NotificationType.reshare ||
+                e.type == NotificationType.follow)
             .toList();
       default:
         return _items;
@@ -81,6 +83,12 @@ class _MentionsScreenState extends State<MentionsScreen> {
       ),
     );
     _load();
+  }
+
+  void _openProfile(String id) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ProfileScreen(userId: id)),
+    );
   }
 
   @override
@@ -110,10 +118,9 @@ class _MentionsScreenState extends State<MentionsScreen> {
                                   const AlwaysScrollableScrollPhysics(),
                               children: [
                                 SizedBox(
-                                  height: MediaQuery.of(context)
-                                          .size
-                                          .height *
-                                      0.28,
+                                  height:
+                                      MediaQuery.of(context).size.height *
+                                          0.28,
                                 ),
                                 Center(
                                   child: Text(
@@ -133,6 +140,7 @@ class _MentionsScreenState extends State<MentionsScreen> {
                               itemBuilder: (_, i) => _NotificationTile(
                                 item: list[i],
                                 onTap: () => _openItem(list[i]),
+                                onOpenProfile: _openProfile,
                               ),
                             ),
                     ),
@@ -171,7 +179,7 @@ class _MentionsScreenState extends State<MentionsScreen> {
         children: [
           _tabItem(context, 'الكل', 0),
           _tabItem(context, 'المنشن', 1),
-          _tabItem(context, 'متابعات', 2),
+          _tabItem(context, 'التفاعلات', 2),
         ],
       ),
     );
@@ -213,12 +221,17 @@ class _MentionsScreenState extends State<MentionsScreen> {
   }
 }
 
-/// صف إشعار واحد
+/// صف إشعار واحد — كل النصوص بمحاذاة اليمين
 class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.item, this.onTap});
+  const _NotificationTile({
+    required this.item,
+    this.onTap,
+    this.onOpenProfile,
+  });
 
   final NotificationItem item;
   final VoidCallback? onTap;
+  final void Function(String userId)? onOpenProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -232,19 +245,29 @@ class _NotificationTile extends StatelessWidget {
           horizontal: AppSizes.screenPadding,
           vertical: 14,
         ),
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          border: Border(bottom: BorderSide(color: AppColors.border)),
+        decoration: BoxDecoration(
+          color: item.unread
+              ? AppColors.brand.withOpacity(0.05)
+              : AppColors.background,
+          border: const Border(
+            bottom: BorderSide(color: AppColors.border),
+          ),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(item.icon, size: 18, color: item.iconColor),
             const SizedBox(width: 11),
-            AvatarCircle(
-              initial: item.initial,
-              seed: item.avatarSeed,
-              size: AppSizes.avatarMedium,
+            GestureDetector(
+              onTap: item.actorId == null
+                  ? null
+                  : () => onOpenProfile?.call(item.actorId!),
+              child: AvatarCircle(
+                initial: item.initial,
+                seed: item.avatarSeed,
+                imageUrl: item.avatarUrl,
+                size: AppSizes.avatarMedium,
+              ),
             ),
             const SizedBox(width: 11),
             Expanded(
@@ -252,6 +275,7 @@ class _NotificationTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Row(
+                    textDirection: TextDirection.rtl,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Flexible(
@@ -273,19 +297,25 @@ class _NotificationTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 5),
-                  Text(
-                    item.actionLabel,
-                    style: t.bodySmall?.copyWith(color: AppColors.text),
-                  ),
-                  if (item.preview != null &&
-                      item.preview!.isNotEmpty) ...[
-                    const SizedBox(height: 5),
-                    Text(
-                      item.preview!,
+                  SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      item.actionLabel,
                       textAlign: TextAlign.right,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: t.bodySmall,
+                      style: t.bodySmall?.copyWith(color: AppColors.text),
+                    ),
+                  ),
+                  if (item.preview != null && item.preview!.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        item.preview!,
+                        textAlign: TextAlign.right,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.bodySmall,
+                      ),
                     ),
                   ],
                 ],
