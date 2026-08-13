@@ -51,13 +51,8 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const ShareLogo(
-              size: 118,
-              color: AppColors.background,
-              background: AppColors.brand,
-              radius: 34,
-            ),
-            const SizedBox(height: 24),
+            const ShareLogo(size: 132),
+            const SizedBox(height: 20),
             Text(
               'share',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
