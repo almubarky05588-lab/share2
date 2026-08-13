@@ -30,6 +30,12 @@ jobs:
               .
           fi
 
+      - name: إزالة الملفات المولّدة غير المطلوبة
+        run: |
+          rm -f test/widget_test.dart
+          rm -rf .idea
+          rm -f share_app.iml android/share_app_android.iml
+
       - name: جلب الحزم
         run: flutter pub get
 
