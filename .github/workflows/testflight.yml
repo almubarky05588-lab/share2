@@ -6,28 +6,27 @@ on:
 jobs:
   beta:
     name: بناء ورفع إلى TestFlight
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 60
 
     steps:
       - name: سحب المستودع
         uses: actions/checkout@v4
 
+      - name: اختيار أحدث Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26* | sort -V | tail -1)/Contents/Developer" && xcodebuild -version
+
       - name: فحص توكن مستودع الشهادات
         env:
           MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
         run: |
           TOKEN=$(printf '%s' "$MATCH_GIT_TOKEN" | tr -d '[:space:]')
-          echo "طول التوكن بعد التنظيف: ${#TOKEN}"
-
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer $TOKEN" \
             https://api.github.com/repos/almubarky05588-lab/share-certs)
-
           echo "استجابة GitHub API: $CODE"
-
           if [ "$CODE" != "200" ]; then
-            echo "❌ التوكن لا يصل للمستودع — راجع الصلاحيات أو أعد إنشاءه"
+            echo "❌ التوكن لا يصل للمستودع"
             exit 1
           fi
           echo "✅ التوكن سليم"
@@ -62,7 +61,6 @@ jobs:
           MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
           FASTLANE_SKIP_UPDATE_CHECK: 'true'
         run: |
-          # تنظيف التوكن من أي مسافات أو أسطر ثم تشفيره base64
           TOKEN=$(printf '%s' "$MATCH_GIT_TOKEN" | tr -d '[:space:]')
           MATCH_GIT_BASIC_AUTHORIZATION=$(printf '%s' "x-access-token:$TOKEN" | base64 | tr -d '[:space:]')
           export MATCH_GIT_BASIC_AUTHORIZATION
