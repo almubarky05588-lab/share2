@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/message.dart';
@@ -6,7 +8,7 @@ import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import 'profile_screen.dart';
 
-/// محادثة خاصة
+/// محادثة خاصة — بث حي للرسائل
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
@@ -33,6 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
 
+  StreamSubscription<List<Message>>? _sub;
   List<Message> _messages = const [];
   bool _loading = true;
   bool _sending = false;
@@ -40,30 +43,32 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    _listen();
   }
 
   @override
   void dispose() {
+    _sub?.cancel();
     _controller.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    try {
-      final msgs = await SupabaseService.instance
-          .fetchMessages(widget.conversationId);
+  /// يستمع للرسائل لحظيًا — تصل بلا خروج ودخول
+  void _listen() {
+    _sub = SupabaseService.instance
+        .messageStream(widget.conversationId)
+        .listen((msgs) {
       if (!mounted) return;
       setState(() {
         _messages = msgs;
         _loading = false;
       });
       _scrollToEnd();
-    } catch (_) {
+    }, onError: (_) {
       if (!mounted) return;
       setState(() => _loading = false);
-    }
+    });
   }
 
   void _scrollToEnd() {
@@ -87,7 +92,6 @@ class _ChatScreenState extends State<ChatScreen> {
       await SupabaseService.instance
           .sendMessage(widget.conversationId, text);
       _controller.clear();
-      await _load();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -155,6 +159,7 @@ class _ChatScreenState extends State<ChatScreen> {
         border: Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
+        textDirection: TextDirection.rtl,
         children: [
           IconButton(
             padding: EdgeInsets.zero,
@@ -163,40 +168,39 @@ class _ChatScreenState extends State<ChatScreen> {
             icon: const Icon(Icons.arrow_forward,
                 size: 20, color: AppColors.text),
           ),
-          const Spacer(),
+          const SizedBox(width: 12),
           GestureDetector(
             onTap: _openProfile,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(widget.name,
-                            style: t.titleMedium?.copyWith(fontSize: 16)),
-                        if (widget.verified) ...[
-                          const SizedBox(width: 5),
-                          const Icon(Icons.verified,
-                              size: 15, color: AppColors.blue),
-                        ],
-                      ],
-                    ),
-                    Text('‎@${widget.handle}', style: t.bodySmall),
-                  ],
-                ),
-                const SizedBox(width: 10),
-                AvatarCircle(
-                  initial: widget.name.isEmpty
-                      ? '؟'
-                      : widget.name.characters.first,
-                  seed: AppColors.brand,
-                  imageUrl: widget.avatarUrl,
-                  size: 38,
-                ),
-              ],
+            child: AvatarCircle(
+              initial:
+                  widget.name.isEmpty ? '؟' : widget.name.characters.first,
+              seed: AppColors.brand,
+              imageUrl: widget.avatarUrl,
+              size: 38,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: GestureDetector(
+              onTap: _openProfile,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    textDirection: TextDirection.rtl,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 5,
+                    children: [
+                      Text(widget.name,
+                          style: t.titleMedium?.copyWith(fontSize: 16)),
+                      if (widget.verified)
+                        const Icon(Icons.verified,
+                            size: 15, color: AppColors.blue),
+                    ],
+                  ),
+                  Text('‎@${widget.handle}', style: t.bodySmall),
+                ],
+              ),
             ),
           ),
         ],
@@ -270,7 +274,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 }
 
-/// فقاعة رسالة — النص والوقت يتبعان اتجاه الفقاعة
+/// فقاعة رسالة
 class _Bubble extends StatelessWidget {
   const _Bubble({required this.message});
 
@@ -304,7 +308,6 @@ class _Bubble extends StatelessWidget {
                   bottomLeft: Radius.circular(mine ? 4 : 18),
                 ),
               ),
-              // العمود يتقلّص لحجم المحتوى فلا يشرد النص القصير
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
