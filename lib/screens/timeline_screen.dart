@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
 import '../widgets/share_bottom_nav.dart';
+import '../widgets/share_logo.dart';
 import 'hashtag_screen.dart';
 import 'post_detail_screen.dart';
 import 'profile_screen.dart';
@@ -36,7 +37,10 @@ class TimelineScreenState extends State<TimelineScreen> {
     _loadMe();
   }
 
-  Future<void> refresh() => _load();
+  Future<void> refresh() async {
+    await _load();
+    await _loadMe();
+  }
 
   Future<void> _loadMe() async {
     final me = await SupabaseService.instance.fetchMyProfile();
@@ -82,10 +86,11 @@ class TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  void _openMyProfile() {
-    Navigator.of(context).push(
+  Future<void> _openMyProfile() async {
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ProfileScreen()),
     );
+    refresh();
   }
 
   void _openHashtag(String tag) {
@@ -154,7 +159,6 @@ class TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
-  /// رسالة قابلة للسحب حتى يعمل التحديث حتى مع القائمة الفارغة
   Widget _messageList(String text, {bool retry = false}) {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -191,27 +195,14 @@ class TimelineScreenState extends State<TimelineScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // مساحة موازنة بدل زر التحديث المحذوف
           const SizedBox(width: 34),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.brand,
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: const Text(
-                  'S',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.background,
-                  ),
-                ),
+              const ShareLogo(
+                size: 30,
+                color: AppColors.background,
+                background: AppColors.brand,
               ),
               const SizedBox(width: 8),
               Text(
