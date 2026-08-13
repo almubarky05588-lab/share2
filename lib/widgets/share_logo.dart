@@ -1,40 +1,52 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// شعار share — حرف S بحلقتين وطرفين مدوّرين، مرسوم بالكود
+/// شعار share — الصورة الأصلية بخلفية شفافة
 class ShareLogo extends StatelessWidget {
   const ShareLogo({
     super.key,
     this.size = 28,
-    this.color = AppColors.brand,
     this.background,
     this.radius,
+    this.padding,
   });
 
-  /// الحجم الكلي للشعار
+  /// الحجم الكلي
   final double size;
 
-  /// لون حرف S
-  final Color color;
-
-  /// لون الخلفية — إن كان null فالخلفية شفافة
+  /// لون الخلفية — null = شفافة
   final Color? background;
 
   /// نصف قطر زوايا الخلفية
   final double? radius;
 
+  /// هامش داخلي حول الشعار
+  final double? padding;
+
+  static const _asset = 'assets/480F58B0-B46F-490B-A1DF-3664552353E1.png';
+
   @override
   Widget build(BuildContext context) {
-    final glyph = CustomPaint(
-      size: Size.square(size * 0.68),
-      painter: _SPainter(color),
+    final inner = padding ?? (background == null ? 0 : size * 0.14);
+
+    final logo = Padding(
+      padding: EdgeInsets.all(inner),
+      child: Image.asset(
+        _asset,
+        width: size - inner * 2,
+        height: size - inner * 2,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => Icon(
+          Icons.circle,
+          size: size * 0.6,
+          color: AppColors.brand,
+        ),
+      ),
     );
 
     if (background == null) {
-      return SizedBox.square(dimension: size, child: Center(child: glyph));
+      return SizedBox.square(dimension: size, child: logo);
     }
 
     return Container(
@@ -45,55 +57,7 @@ class ShareLogo extends StatelessWidget {
         color: background,
         borderRadius: BorderRadius.circular(radius ?? size * 0.29),
       ),
-      child: glyph,
+      child: logo,
     );
   }
-}
-
-class _SPainter extends CustomPainter {
-  const _SPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final s = size.width;
-    final stroke = s * 0.22;
-
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = stroke
-      ..strokeCap = StrokeCap.round;
-
-    final r = s * 0.245;
-
-    // الحلقة العليا — مفتوحة من أعلى اليمين
-    canvas.drawArc(
-      Rect.fromCircle(center: Offset(s / 2, s * 0.27), radius: r),
-      -math.pi * 0.32,
-      math.pi * 1.42,
-      false,
-      paint,
-    );
-
-    // الحلقة السفلى — مفتوحة من أسفل اليسار
-    canvas.drawArc(
-      Rect.fromCircle(center: Offset(s / 2, s * 0.73), radius: r),
-      math.pi * 0.68,
-      math.pi * 1.42,
-      false,
-      paint,
-    );
-
-    // الوصلة القُطرية بين الحلقتين
-    canvas.drawLine(
-      Offset(s * 0.5 - r * 0.55, s * 0.27 + r * 0.72),
-      Offset(s * 0.5 + r * 0.55, s * 0.73 - r * 0.72),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SPainter old) => old.color != color;
 }
