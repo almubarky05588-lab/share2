@@ -45,3 +45,64 @@ class _AppShellState extends State<AppShell> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      body: IndexedStack(
+        index: _index,
+        children: [
+          TimelineScreen(key: _timelineKey, showChrome: false),
+          const ExploreScreen(),
+          const MentionsScreen(showChrome: false),
+          const MessagesScreen(showChrome: false),
+          const ProfileScreen(),
+        ],
+      ),
+      bottomNavigationBar: ShareBottomNav(
+        currentIndex: _index,
+        onTap: (i) => setState(() => _index = i),
+      ),
+      floatingActionButton: _index == 0 ? _shareButton() : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  Widget _shareButton() {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.brand.withOpacity(0.35),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Material(
+        color: AppColors.brand,
+        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
+          onTap: _openCompose,
+          child: const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 19, vertical: 13),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add, size: 18, color: AppColors.background),
+                SizedBox(width: 7),
+                Text(
+                  'share',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.55,
+                    color: AppColors.background,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
