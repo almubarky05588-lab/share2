@@ -1,21 +1,29 @@
 import 'package:flutter/material.dart';
 
 import '../models/message.dart';
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
+import 'profile_screen.dart';
 
-/// محادثة خاصة — الشاشة ٤ من التصميم
+/// محادثة خاصة
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
-    this.name = 'نورة السالم',
-    this.handle = 'noura_s',
-    this.verified = true,
+    required this.conversationId,
+    required this.name,
+    required this.handle,
+    this.otherUserId,
+    this.verified = false,
+    this.avatarUrl,
   });
 
+  final String conversationId;
   final String name;
-  final String handle; // بدون @
+  final String handle;
+  final String? otherUserId;
   final bool verified;
+  final String? avatarUrl;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -23,82 +31,80 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
-  final _scrollController = ScrollController();
+  final _scroll = ScrollController();
 
-  // مؤقت — يُستبدل بجلب من Supabase
-  final _messages = <Message>[
-    const Message(
-      id: '1',
-      fromMe: false,
-      time: '11:02',
-      body: 'السلام عليكم مبارك، شفت النسخة الأخيرة من التصميم؟',
-    ),
-    const Message(
-      id: '2',
-      fromMe: true,
-      time: '11:04',
-      body: 'وعليكم السلام 👋 نعم شفتها، الاتجاه صار مضبوط تمامًا.',
-    ),
-    const Message(
-      id: '3',
-      fromMe: false,
-      time: '11:05',
-      body:
-          'ممتاز. الشيء المهم عندي هو تباعد الأسطر في النص العربي — لازم يكون أوسع شوي عشان يرتاح.',
-    ),
-    const Message(
-      id: '4',
-      fromMe: true,
-      time: '11:07',
-      body:
-          'بالضبط — الصورة الرمزية والاسم على اليمين، والإجراءات موزّعة تحت النص. ضبطتها على 1.75.',
-    ),
-    const Message(
-      id: '5',
-      fromMe: false,
-      time: '11:20',
-      body: 'تمام، أرسل لي ملف التصميم النهائي وأراجعه اليوم بإذن الله.',
-    ),
-  ];
+  List<Message> _messages = const [];
+  bool _loading = true;
+  bool _sending = false;
 
-  void _send() {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-    setState(() {
-      _messages.add(
-        Message(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          body: text,
-          time: _now(),
-          fromMe: true,
-        ),
-      );
-      _controller.clear();
-    });
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
 
+  Future<void> _load() async {
+    try {
+      final msgs = await SupabaseService.instance
+          .fetchMessages(widget.conversationId);
+      if (!mounted) return;
+      setState(() {
+        _messages = msgs;
+        _loading = false;
+      });
+      _scrollToEnd();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+      if (!_scroll.hasClients) return;
+      _scroll.animateTo(
+        _scroll.position.maxScrollExtent,
         duration: const Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
     });
   }
 
-  static String _now() {
-    final d = DateTime.now();
-    final h = d.hour.toString().padLeft(2, '0');
-    final m = d.minute.toString().padLeft(2, '0');
-    return '$h:$m';
+  Future<void> _send() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _sending) return;
+
+    setState(() => _sending = true);
+
+    try {
+      await SupabaseService.instance
+          .sendMessage(widget.conversationId, text);
+      _controller.clear();
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذّر إرسال الرسالة')),
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    _scrollController.dispose();
-    super.dispose();
+  void _openProfile() {
+    if (widget.otherUserId == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(userId: widget.otherUserId!),
+      ),
+    );
   }
 
   @override
@@ -110,15 +116,28 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             _header(context),
             Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSizes.screenPadding,
-                  vertical: 16,
-                ),
-                itemCount: _messages.length,
-                itemBuilder: (_, i) => _Bubble(message: _messages[i]),
-              ),
+              child: _loading
+                  ? const Center(
+                      child:
+                          CircularProgressIndicator(color: AppColors.brand),
+                    )
+                  : _messages.isEmpty
+                      ? Center(
+                          child: Text(
+                            'ابدأ المحادثة',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: _scroll,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSizes.screenPadding,
+                            vertical: 16,
+                          ),
+                          itemCount: _messages.length,
+                          itemBuilder: (_, i) =>
+                              _Bubble(message: _messages[i]),
+                        ),
             ),
             _composer(context),
           ],
@@ -141,47 +160,44 @@ class _ChatScreenState extends State<ChatScreen> {
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
             onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(
-              Icons.arrow_forward,
-              size: 20,
-              color: AppColors.text,
-            ),
+            icon: const Icon(Icons.arrow_forward,
+                size: 20, color: AppColors.text),
           ),
           const Spacer(),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.name,
-                    style: t.titleMedium?.copyWith(fontSize: 16),
-                  ),
-                  if (widget.verified) ...[
-                    const SizedBox(width: 5),
-                    const Icon(
-                      Icons.verified,
-                      size: 15,
-                      color: AppColors.blue,
+          GestureDetector(
+            onTap: _openProfile,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(widget.name,
+                            style: t.titleMedium?.copyWith(fontSize: 16)),
+                        if (widget.verified) ...[
+                          const SizedBox(width: 5),
+                          const Icon(Icons.verified,
+                              size: 15, color: AppColors.blue),
+                        ],
+                      ],
                     ),
+                    Text('‎@${widget.handle}', style: t.bodySmall),
                   ],
-                ],
-              ),
-              Text('‎@${widget.handle}', style: t.bodySmall),
-            ],
-          ),
-          const SizedBox(width: 10),
-          AvatarCircle(
-            initial: widget.name.characters.first,
-            seed: AppColors.brand,
-            size: 38,
-          ),
-          const SizedBox(width: 10),
-          const Icon(
-            Icons.info_outline,
-            size: 20,
-            color: AppColors.text,
+                ),
+                const SizedBox(width: 10),
+                AvatarCircle(
+                  initial: widget.name.isEmpty
+                      ? '؟'
+                      : widget.name.characters.first,
+                  seed: AppColors.brand,
+                  imageUrl: widget.avatarUrl,
+                  size: 38,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -202,15 +218,20 @@ class _ChatScreenState extends State<ChatScreen> {
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: _send,
-              child: const SizedBox(
+              onTap: _sending ? null : _send,
+              child: SizedBox(
                 width: 41,
                 height: 39,
-                child: Icon(
-                  Icons.send,
-                  size: 19,
-                  color: AppColors.background,
-                ),
+                child: _sending
+                    ? const Padding(
+                        padding: EdgeInsets.all(11),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.background,
+                        ),
+                      )
+                    : const Icon(Icons.send,
+                        size: 19, color: AppColors.background),
               ),
             ),
           ),
@@ -228,13 +249,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 minLines: 1,
                 maxLines: 4,
                 onSubmitted: (_) => _send(),
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 14,
-                      color: AppColors.text,
-                    ),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(fontSize: 15),
                 decoration: InputDecoration(
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 11),
                   border: InputBorder.none,
                   hintText: 'اكتب رسالة…',
                   hintStyle: Theme.of(context).textTheme.bodySmall,
@@ -242,25 +264,13 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 9),
-          const Icon(
-            Icons.image_outlined,
-            size: 22,
-            color: AppColors.textMuted,
-          ),
-          const SizedBox(width: 9),
-          const Icon(
-            Icons.emoji_emotions_outlined,
-            size: 22,
-            color: AppColors.textMuted,
-          ),
         ],
       ),
     );
   }
 }
 
-/// فقاعة رسالة
+/// فقاعة رسالة — النص والوقت يتبعان اتجاه الفقاعة
 class _Bubble extends StatelessWidget {
   const _Bubble({required this.message});
 
@@ -277,16 +287,16 @@ class _Bubble extends StatelessWidget {
             mine ? MainAxisAlignment.start : MainAxisAlignment.end,
         children: [
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 258),
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.72,
+            ),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: mine
                     ? AppColors.brand
-                    : AppColors.border.withOpacity(0.45),
+                    : AppColors.border.withOpacity(0.5),
                 borderRadius: BorderRadius.only(
                   topRight: const Radius.circular(18),
                   topLeft: const Radius.circular(18),
@@ -294,32 +304,29 @@ class _Bubble extends StatelessWidget {
                   bottomLeft: Radius.circular(mine ? 4 : 18),
                 ),
               ),
+              // العمود يتقلّص لحجم المحتوى فلا يشرد النص القصير
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
                     message.body,
                     textAlign: TextAlign.right,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 14,
-                          color: mine
-                              ? AppColors.background
-                              : AppColors.text,
+                          fontSize: 15,
+                          color:
+                              mine ? AppColors.background : AppColors.text,
                         ),
                   ),
-                  const SizedBox(height: 4),
-                  Align(
-                    alignment:
-                        mine ? Alignment.centerRight : Alignment.centerLeft,
-                    child: Text(
-                      message.time,
-                      style: TextStyle(
-                        fontSize: 11,
-                        height: 1.55,
-                        color: mine
-                            ? AppColors.background.withOpacity(0.75)
-                            : AppColors.textMuted,
-                      ),
+                  const SizedBox(height: 3),
+                  Text(
+                    message.time,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.4,
+                      color: mine
+                          ? AppColors.background.withOpacity(0.75)
+                          : AppColors.textMuted,
                     ),
                   ),
                 ],
