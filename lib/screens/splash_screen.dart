@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import 'timeline_screen.dart';
+import 'app_shell.dart';
 
 /// شاشة البداية — الشاشة ٧ في التصميم
 class SplashScreen extends StatefulWidget {
@@ -22,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen> {
     _timer = Timer(const Duration(seconds: 2), () {
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const TimelineScreen()),
+        MaterialPageRoute(builder: (_) => const AppShell()),
       );
     });
   }
