@@ -20,6 +20,7 @@ class UserProfile {
     this.followsYou = false,
     this.isFollowing = false,
     this.isBlocked = false,
+    this.blockedMe = false,
   });
 
   final String id;
@@ -37,12 +38,14 @@ class UserProfile {
   final bool followsYou;
   final bool isFollowing;
 
-  /// هل حظرتُ هذا المستخدم
+  /// حظرتُه أنا
   final bool isBlocked;
+
+  /// حظرني هو
+  final bool blockedMe;
 
   String get initial => name.isEmpty ? '؟' : name.characters.first;
 
-  /// الرابط كاملًا للفتح
   String? get websiteUrl {
     final w = website?.trim();
     if (w == null || w.isEmpty) return null;
@@ -50,7 +53,6 @@ class UserProfile {
     return 'https://$w';
   }
 
-  /// الرابط مختصرًا للعرض
   String? get websiteLabel {
     final w = website?.trim();
     if (w == null || w.isEmpty) return null;
@@ -90,6 +92,7 @@ class UserProfile {
     String? avatarUrl,
     bool? isFollowing,
     bool? isBlocked,
+    bool? blockedMe,
     int? followers,
   }) =>
       UserProfile(
@@ -108,6 +111,7 @@ class UserProfile {
         followsYou: followsYou,
         isFollowing: isFollowing ?? this.isFollowing,
         isBlocked: isBlocked ?? this.isBlocked,
+        blockedMe: blockedMe ?? this.blockedMe,
       );
 
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
@@ -126,5 +130,6 @@ class UserProfile {
         followsYou: map['follows_you'] as bool? ?? false,
         isFollowing: map['is_following'] as bool? ?? false,
         isBlocked: map['is_blocked'] as bool? ?? false,
+        blockedMe: map['blocked_me'] as bool? ?? false,
       );
 }
