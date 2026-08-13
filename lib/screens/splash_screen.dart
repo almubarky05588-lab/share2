@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import 'app_shell.dart';
+import 'auth_screen.dart';
 
 /// شاشة البداية — الشاشة ٧ في التصميم
 class SplashScreen extends StatefulWidget {
@@ -19,12 +21,19 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AppShell()),
-      );
-    });
+    _timer = Timer(const Duration(milliseconds: 1600), _go);
+  }
+
+  void _go() {
+    if (!mounted) return;
+
+    final signedIn = SupabaseService.instance.isSignedIn;
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => signedIn ? const AppShell() : const AuthScreen(),
+      ),
+    );
   }
 
   @override
