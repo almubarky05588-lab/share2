@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// محادثة في قائمة الرسائل الخاصة
+/// محادثة خاصة في قائمة الرسائل
 class Conversation {
   const Conversation({
     required this.id,
@@ -11,25 +11,25 @@ class Conversation {
     required this.lastMessage,
     required this.time,
     this.otherUserId = '',
+    this.avatarUrl,
     this.verified = false,
-    this.unread = false,
     this.sentByMe = false,
+    this.unread = false,
   });
 
   final String id;
-
-  /// معرّف الطرف الآخر — لفتح ملفه
   final String otherUserId;
-
   final String name;
   final String handle; // بدون @
   final String lastMessage;
   final String time;
+  final String? avatarUrl;
   final bool verified;
-  final bool unread;
+
+  /// آخر رسالة مني أنا
   final bool sentByMe;
 
-  String get preview => sentByMe ? 'أنت: $lastMessage' : lastMessage;
+  final bool unread;
 
   String get initial => name.isEmpty ? '؟' : name.characters.first;
 
@@ -43,15 +43,6 @@ class Conversation {
     return palette[handle.hashCode.abs() % palette.length];
   }
 
-  factory Conversation.fromMap(Map<String, dynamic> map) => Conversation(
-        id: map['id'].toString(),
-        otherUserId: map['other_user_id']?.toString() ?? '',
-        name: map['name'] as String? ?? '',
-        handle: map['handle'] as String? ?? '',
-        lastMessage: map['last_message'] as String? ?? '',
-        time: map['time'] as String? ?? '',
-        verified: map['verified'] as bool? ?? false,
-        unread: map['unread'] as bool? ?? false,
-        sentByMe: map['sent_by_me'] as bool? ?? false,
-      );
+  String get preview =>
+      lastMessage.isEmpty ? 'ابدأ المحادثة' : (sentByMe ? 'أنت: $lastMessage' : lastMessage);
 }
