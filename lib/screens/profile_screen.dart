@@ -89,8 +89,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _busy = true);
 
     try {
-      final cid =
-          await SupabaseService.instance.openConversationWith(p.id);
+      final cid = await SupabaseService.instance.openConversationWith(p.id);
       if (!mounted) return;
 
       await Navigator.of(context).push(
@@ -366,6 +365,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// الغلاف — صورة المستخدم إن وُجدت، وإلا التدرّج
   Widget _head(BuildContext context, UserProfile p) {
     return SizedBox(
       height: 136 + 46,
@@ -375,7 +375,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Container(
             height: 136,
             width: double.infinity,
-            decoration: const BoxDecoration(gradient: AppTheme.brandGradient),
+            decoration: BoxDecoration(
+              gradient: p.coverUrl == null ? AppTheme.brandGradient : null,
+              image: p.coverUrl == null
+                  ? null
+                  : DecorationImage(
+                      image: NetworkImage(p.coverUrl!),
+                      fit: BoxFit.cover,
+                    ),
+            ),
           ),
           SafeArea(
             bottom: false,
@@ -385,26 +393,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 textDirection: TextDirection.rtl,
                 children: [
                   if (Navigator.of(context).canPop())
-                    InkWell(
+                    _circleButton(
+                      icon: Icons.arrow_forward,
                       onTap: () => Navigator.of(context).maybePop(),
-                      child: const Icon(Icons.arrow_forward,
-                          size: 20, color: AppColors.background),
                     ),
                   const Spacer(),
                   if (_isMe)
-                    InkWell(
+                    _circleButton(
+                      icon: Icons.settings_outlined,
                       onTap: _openSettings,
-                      child: const Icon(Icons.settings_outlined,
-                          size: 22, color: AppColors.background),
                     )
                   else
-                    InkWell(
+                    _circleButton(
+                      icon: p.isBlocked ? Icons.person_off : Icons.more_horiz,
                       onTap: _toggleBlock,
-                      child: Icon(
-                        p.isBlocked ? Icons.person_off : Icons.more_horiz,
-                        size: 22,
-                        color: AppColors.background,
-                      ),
                     ),
                 ],
               ),
@@ -432,6 +434,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _circleButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.black.withOpacity(0.28),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: Icon(icon, size: 19, color: AppColors.background),
+        ),
+      ),
+    );
+  }
+
   Widget _info(BuildContext context, UserProfile p) {
     final t = Theme.of(context).textTheme;
 
@@ -442,7 +463,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // الاسم كامل بلا اقتطاع — يلتف لسطرين عند الحاجة
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
