@@ -13,6 +13,7 @@ class UserProfile {
     required this.following,
     required this.posts,
     this.avatarUrl,
+    this.coverUrl,
     this.location,
     this.website,
     this.joined,
@@ -25,12 +26,16 @@ class UserProfile {
 
   final String id;
   final String name;
-  final String handle; // بدون @
+  final String handle;
   final String bio;
   final int followers;
   final int following;
   final int posts;
   final String? avatarUrl;
+
+  /// صورة الغلاف
+  final String? coverUrl;
+
   final String? location;
   final String? website;
   final String? joined;
@@ -72,7 +77,6 @@ class UserProfile {
     return palette[handle.hashCode.abs() % palette.length];
   }
 
-  /// 18400 → 18.4 ألف
   static String formatCount(int n) {
     if (n < 1000) return '$n';
     if (n < 10000) {
@@ -90,6 +94,7 @@ class UserProfile {
     String? location,
     String? website,
     String? avatarUrl,
+    String? coverUrl,
     bool? isFollowing,
     bool? isBlocked,
     bool? blockedMe,
@@ -104,6 +109,7 @@ class UserProfile {
         following: following,
         posts: posts,
         avatarUrl: avatarUrl ?? this.avatarUrl,
+        coverUrl: coverUrl ?? this.coverUrl,
         location: location ?? this.location,
         website: website ?? this.website,
         joined: joined,
@@ -123,6 +129,7 @@ class UserProfile {
         following: (map['following'] as num?)?.toInt() ?? 0,
         posts: (map['posts'] as num?)?.toInt() ?? 0,
         avatarUrl: map['avatar_url'] as String?,
+        coverUrl: map['cover_url'] as String?,
         location: map['location'] as String?,
         website: map['website'] as String?,
         joined: map['joined'] as String?,
