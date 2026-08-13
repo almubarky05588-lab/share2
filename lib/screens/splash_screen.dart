@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/share_logo.dart';
 import 'app_shell.dart';
 import 'auth_screen.dart';
 
-/// شاشة البداية — الشاشة ٧ في التصميم
+/// شاشة البداية
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
 
@@ -21,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(milliseconds: 1600), _go);
+    _timer = Timer(const Duration(milliseconds: 1400), _go);
   }
 
   void _go() {
@@ -50,34 +51,22 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // مؤقتًا: مربّع العلامة بحرف S — يُستبدل بملف الشعار لاحقًا
-            Container(
-              width: 118,
-              height: 118,
-              decoration: BoxDecoration(
-                color: AppColors.brand,
-                borderRadius: BorderRadius.circular(34),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                'S',
-                style: TextStyle(
-                  fontSize: 62,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                ),
-              ),
+            const ShareLogo(
+              size: 118,
+              color: AppColors.background,
+              background: AppColors.brand,
+              radius: 34,
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
             Text(
-              'شارِك',
+              'share',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontSize: 46,
+                    fontSize: 44,
                     fontWeight: FontWeight.w900,
                     color: AppColors.brand,
                   ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             Text(
               'تواصل عربي — من اليمين لليسار',
               style: Theme.of(context).textTheme.bodySmall,
