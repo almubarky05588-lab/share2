@@ -230,12 +230,8 @@ class TimelineScreenState extends State<TimelineScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const ShareLogo(
-                    size: 30,
-                    color: AppColors.background,
-                    background: AppColors.brand,
-                  ),
-                  const SizedBox(width: 8),
+                  const ShareLogo(size: 32),
+                  const SizedBox(width: 7),
                   Text(
                     'share',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -273,32 +269,4 @@ class TimelineScreenState extends State<TimelineScreen> {
 
     return Expanded(
       child: InkWell(
-        onTap: () => _switchTab(index),
-        child: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                      color: active ? AppColors.text : AppColors.textMuted,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: 46,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: active ? AppColors.brand : Colors.transparent,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+        onTap: () =>
