@@ -46,7 +46,6 @@ class SupabaseService {
 
   Future<void> signOut() => _db.auth.signOut();
 
-  /// تغيير البريد — يرسل رسالة تأكيد للبريد الجديد
   Future<void> changeEmail(String newEmail) async {
     await _db.auth.updateUser(UserAttributes(email: newEmail));
   }
@@ -149,15 +148,12 @@ class SupabaseService {
     return list.take(20).toList();
   }
 
-  /// المنشورات المحفوظة في المفضلة
-  Future<List<Post>> fetchBookmarks() async {
-    final uid = currentUserId;
-    if (uid == null) return [];
-
+  /// المنشورات التي أعجبني — تبويب المفضلة
+  Future<List<Post>> fetchLikedPosts(String userId) async {
     final rows = await _db
-        .from('bookmarks')
+        .from('likes')
         .select('post_id')
-        .eq('user_id', uid)
+        .eq('user_id', userId)
         .order('created_at', ascending: false)
         .limit(50);
 
@@ -171,6 +167,20 @@ class SupabaseService {
         .order('created_at', ascending: false);
 
     return posts.map<Post>(_post).toList();
+  }
+
+  /// تسجيل مشاهدة — مرة واحدة لكل مستخدم
+  Future<void> recordView(String postId) async {
+    final uid = currentUserId;
+    if (uid == null) return;
+
+    try {
+      await _db
+          .from('post_views')
+          .upsert({'post_id': postId, 'user_id': uid});
+    } catch (_) {
+      // غير حرج
+    }
   }
 
   // ── النشر والتفاعل ───────────────────────────────────────
@@ -246,31 +256,26 @@ class SupabaseService {
     }
   }
 
-  Future<void> setBookmark(String postId, bool on) async {
-    final uid = currentUserId;
-    if (uid == null) throw StateError('غير مسجّل الدخول');
-
-    if (on) {
-      await _db.from('bookmarks').upsert({'post_id': postId, 'user_id': uid});
-    } else {
-      await _db
-          .from('bookmarks')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', uid);
-    }
-  }
-
   Future<void> deletePost(String postId) async {
     await _db.from('posts').delete().eq('id', postId);
   }
 
-  /// رابط المنشور للمشاركة
   String postLink(String postId) => 'https://share.sa/p/$postId';
 
   static List<String> extractHandles(String body) {
     final re = RegExp(r'@([a-zA-Z0-9._]{3,20})');
     return re.allMatches(body).map((m) => m.group(1)!).toSet().toList();
+  }
+
+  /// معرّف المستخدم من المعرّف النصي
+  Future<String?> userIdByHandle(String handle) async {
+    final row = await _db
+        .from('profiles')
+        .select('id')
+        .eq('handle', handle.replaceAll('@', '').toLowerCase())
+        .maybeSingle();
+
+    return row?['id'] as String?;
   }
 
   // ── الحظر ────────────────────────────────────────────────
@@ -312,24 +317,61 @@ class SupabaseService {
 
     final rows = await _db
         .from('blocks')
-        .select('blocked:profiles!blocks_blocked_id_fkey(id, handle, name, avatar_url, verified)')
+        .select(
+          'blocked:profiles!blocks_blocked_id_fkey(id, handle, name, avatar_url, verified)',
+        )
         .eq('blocker_id', uid);
 
     return rows
         .map((r) => r['blocked'])
         .whereType<Map<String, dynamic>>()
-        .map<UserProfile>((b) => UserProfile(
-              id: b['id'].toString(),
-              name: b['name'] as String? ?? '',
-              handle: b['handle'] as String? ?? '',
-              bio: '',
-              avatarUrl: b['avatar_url'] as String?,
-              verified: b['verified'] as bool? ?? false,
-              followers: 0,
-              following: 0,
-              posts: 0,
-              isBlocked: true,
-            ))
+        .map<UserProfile>(_lightProfile)
+        .toList();
+  }
+
+  UserProfile _lightProfile(Map<String, dynamic> r) => UserProfile(
+        id: r['id'].toString(),
+        name: r['name'] as String? ?? '',
+        handle: r['handle'] as String? ?? '',
+        bio: r['bio'] as String? ?? '',
+        avatarUrl: r['avatar_url'] as String?,
+        verified: r['verified'] as bool? ?? false,
+        followers: 0,
+        following: 0,
+        posts: 0,
+      );
+
+  // ── قوائم المتابعة ───────────────────────────────────────
+
+  Future<List<UserProfile>> fetchFollowers(String userId) async {
+    final rows = await _db
+        .from('follows')
+        .select(
+          'follower:profiles!follows_follower_id_fkey(id, handle, name, bio, avatar_url, verified)',
+        )
+        .eq('following_id', userId)
+        .limit(100);
+
+    return rows
+        .map((r) => r['follower'])
+        .whereType<Map<String, dynamic>>()
+        .map<UserProfile>(_lightProfile)
+        .toList();
+  }
+
+  Future<List<UserProfile>> fetchFollowing(String userId) async {
+    final rows = await _db
+        .from('follows')
+        .select(
+          'following:profiles!follows_following_id_fkey(id, handle, name, bio, avatar_url, verified)',
+        )
+        .eq('follower_id', userId)
+        .limit(100);
+
+    return rows
+        .map((r) => r['following'])
+        .whereType<Map<String, dynamic>>()
+        .map<UserProfile>(_lightProfile)
         .toList();
   }
 
@@ -373,66 +415,75 @@ class SupabaseService {
     return url;
   }
 
-  // ── المنشن والإشعارات ────────────────────────────────────
+  // ── الإشعارات ────────────────────────────────────────────
+
+  Future<DateTime?> _seenAt() async {
+    final uid = currentUserId;
+    if (uid == null) return null;
+
+    final row = await _db
+        .from('profiles')
+        .select('notifications_seen_at')
+        .eq('id', uid)
+        .maybeSingle();
+
+    final v = row?['notifications_seen_at'] as String?;
+    return v == null ? null : DateTime.tryParse(v);
+  }
 
   Future<List<NotificationItem>> fetchNotifications() async {
     final uid = currentUserId;
     if (uid == null) return [];
 
-    final items = <NotificationItem>[];
+    final seen = await _seenAt();
 
-    final mentions = await _db
-        .from('mentions')
-        .select(
-          'post_id, post:posts(id, body, created_at, reply_to, '
-          'author:profiles!posts_author_id_fkey(handle, name, verified))',
-        )
-        .eq('user_id', uid)
-        .limit(40);
-
-    for (final m in mentions) {
-      final p = m['post'] as Map<String, dynamic>?;
-      if (p == null) continue;
-      final a = p['author'] as Map<String, dynamic>? ?? const {};
-
-      items.add(NotificationItem(
-        id: 'm_${p['id']}',
-        postId: p['id'].toString(),
-        type: p['reply_to'] != null
-            ? NotificationType.commentMention
-            : NotificationType.mention,
-        actorName: a['name'] as String? ?? '',
-        handle: a['handle'] as String? ?? '',
-        verified: a['verified'] as bool? ?? false,
-        timeAgo: formatTimeAgo(p['created_at'] as String?),
-        preview: p['body'] as String?,
-      ));
-    }
-
-    final follows = await _db
-        .from('follows')
-        .select(
-          'created_at, follower_id, '
-          'follower:profiles!follows_follower_id_fkey(id, handle, name, verified)',
-        )
-        .eq('following_id', uid)
+    final rows = await _db
+        .from('notifications_feed')
+        .select('*')
+        .eq('recipient_id', uid)
         .order('created_at', ascending: false)
-        .limit(20);
+        .limit(60);
 
-    for (final f in follows) {
-      final a = f['follower'] as Map<String, dynamic>? ?? const {};
-      items.add(NotificationItem(
-        id: 'f_${a['handle']}',
-        actorId: a['id']?.toString(),
-        type: NotificationType.follow,
-        actorName: a['name'] as String? ?? '',
-        handle: a['handle'] as String? ?? '',
-        verified: a['verified'] as bool? ?? false,
-        timeAgo: formatTimeAgo(f['created_at'] as String?),
-      ));
+    return rows.map<NotificationItem>((r) {
+      final created = DateTime.tryParse(r['created_at'] as String? ?? '');
+      final unread =
+          seen == null || (created != null && created.isAfter(seen));
+
+      return NotificationItem.fromRow(
+        r,
+        formatTime: formatTimeAgo,
+        unread: unread,
+      );
+    }).toList();
+  }
+
+  /// عدد الإشعارات غير المقروءة
+  Future<int> unreadNotificationsCount() async {
+    final uid = currentUserId;
+    if (uid == null) return 0;
+
+    final seen = await _seenAt();
+    if (seen == null) return 0;
+
+    try {
+      return await _db
+          .from('notifications_feed')
+          .count()
+          .eq('recipient_id', uid)
+          .gt('created_at', seen.toIso8601String());
+    } catch (_) {
+      return 0;
     }
+  }
 
-    return items;
+  /// تعليم الإشعارات كمقروءة
+  Future<void> markNotificationsSeen() async {
+    final uid = currentUserId;
+    if (uid == null) return;
+
+    await _db.from('profiles').update({
+      'notifications_seen_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', uid);
   }
 
   // ── الرسائل ──────────────────────────────────────────────
@@ -550,7 +601,6 @@ class SupabaseService {
     final following =
         await _db.from('follows').count().eq('follower_id', userId);
 
-    // المنشورات الأصلية فقط — بلا ريشير ولا ردود
     final posts = await _db
         .from('posts')
         .count()
@@ -608,7 +658,6 @@ class SupabaseService {
     return fetchProfile(uid);
   }
 
-  /// هل المعرّف متاح؟
   Future<bool> isHandleAvailable(String handle) async {
     final uid = currentUserId;
     final row = await _db
@@ -670,23 +719,10 @@ class SupabaseService {
     }
 
     final rows = await builder.limit(20);
-
-    return rows
-        .map<UserProfile>((r) => UserProfile(
-              id: r['id'].toString(),
-              name: r['name'] as String? ?? '',
-              handle: r['handle'] as String? ?? '',
-              bio: r['bio'] as String? ?? '',
-              avatarUrl: r['avatar_url'] as String?,
-              verified: r['verified'] as bool? ?? false,
-              followers: 0,
-              following: 0,
-              posts: 0,
-            ))
-        .toList();
+    return rows.map<UserProfile>(_lightProfile).toList();
   }
 
-  // ── تنسيق الوقت ──────────────────────────────────────────
+  // ── تنسيق ────────────────────────────────────────────────
 
   static String formatTimeAgo(String? iso) {
     if (iso == null) return '';
