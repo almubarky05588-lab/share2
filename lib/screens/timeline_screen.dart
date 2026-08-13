@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../models/post.dart';
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
 import '../widgets/share_bottom_nav.dart';
+import 'auth_screen.dart';
 
 /// التايم لاين — الشاشة ١ من التصميم
 class TimelineScreen extends StatefulWidget {
@@ -14,62 +16,62 @@ class TimelineScreen extends StatefulWidget {
   final bool showChrome;
 
   @override
-  State<TimelineScreen> createState() => _TimelineScreenState();
+  State<TimelineScreen> createState() => TimelineScreenState();
 }
 
-class _TimelineScreenState extends State<TimelineScreen> {
+class TimelineScreenState extends State<TimelineScreen> {
   int _tab = 0; // 0 لك · 1 المتابَعون
 
-  // مؤقت — يُستبدل بجلب من Supabase
-  static const _posts = <Post>[
-    Post(
-      id: '1',
-      authorName: 'نورة السالم',
-      handle: 'noura_s',
-      verified: true,
-      timeAgo: '2س',
-      body:
-          'ثلاث سنوات وأنا أبحث عن تطبيق عربي يحترم اتجاه الكتابة من اليمين لليسار… قررت أخيرًا أبنيه بنفسي.',
-      likes: 910,
-      reshares: 128,
-      comments: 42,
-    ),
-    Post(
-      id: '2',
-      authorName: 'خالد المطيري',
-      handle: 'khalid.m',
-      timeAgo: '4س',
-      resharedBy: 'تركي',
-      body:
-          'أفضل نصيحة سمعتها هذا الأسبوع: اكتب المنشور، ثم احذف أول سطرين. الفكرة دائمًا تبدأ من السطر الثالث.',
-      likes: 305,
-      reshares: 64,
-      comments: 18,
-    ),
-    Post(
-      id: '3',
-      authorName: 'استوديو مِداد',
-      handle: 'midad.studio',
-      verified: true,
-      timeAgo: '6س',
-      body: 'أطلقنا لوحة ألوان جديدة مستوحاة من الزخرفة النجدية. متاحة مجانًا للجميع.',
-      hasMedia: true,
-      likes: 1400,
-      reshares: 240,
-      comments: 73,
-    ),
-    Post(
-      id: '4',
-      authorName: 'سارة العتيبي',
-      handle: 'sara.otb',
-      timeAgo: '9س',
-      body:
-          'تذكير: المنشن ليس دعوة للنقاش، أحيانًا يكون مجرد تقدير. اذكر من ساعدك اليوم.',
-      likes: 188,
-      reshares: 27,
-      comments: 9,
-    ),
-  ];
+  bool _loading = true;
+  String? _error;
+  List<Post> _posts = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  /// يمكن استدعاؤها من الخارج بعد نشر منشور جديد
+  Future<void> refresh() => _load();
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final posts = await SupabaseService.instance
+          .fetchTimeline(followingOnly: _tab == 1);
+      if (!mounted) return;
+      setState(() {
+        _posts = posts;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'تعذّر تحميل المنشورات';
+        _loading = false;
+      });
+    }
+  }
+
+  void _switchTab(int index) {
+    if (_tab == index) return;
+    setState(() => _tab = index);
+    _load();
+  }
+
+  Future<void> _signOut() async {
+    await SupabaseService.instance.signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (_) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,20 +83,61 @@ class _TimelineScreenState extends State<TimelineScreen> {
           children: [
             _header(context),
             _tabs(context),
-            Expanded(
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: _posts.length,
-                itemBuilder: (_, i) => PostCard(post: _posts[i]),
-              ),
-            ),
+            Expanded(child: _body(context)),
           ],
         ),
       ),
       bottomNavigationBar:
           widget.showChrome ? const ShareBottomNav(currentIndex: 0) : null,
-      floatingActionButton: widget.showChrome ? _shareButton(context) : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  Widget _body(BuildContext context) {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.brand),
+      );
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_error!, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: _load,
+              child: const Text(
+                'إعادة المحاولة',
+                style: TextStyle(color: AppColors.brand),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_posts.isEmpty) {
+      return Center(
+        child: Text(
+          _tab == 1
+              ? 'لا توجد منشورات ممن تتابعهم بعد'
+              : 'لا توجد منشورات بعد — اكتب أول منشور',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      color: AppColors.brand,
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: EdgeInsets.zero,
+        itemCount: _posts.length,
+        itemBuilder: (_, i) => PostCard(post: _posts[i]),
+      ),
     );
   }
 
@@ -104,11 +147,14 @@ class _TimelineScreenState extends State<TimelineScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const AvatarCircle(
-            initial: 'م',
-            seed: AppColors.brand,
-            size: 34,
-            flat: true,
+          InkWell(
+            onTap: _signOut,
+            child: const AvatarCircle(
+              initial: 'م',
+              seed: AppColors.brand,
+              size: 34,
+              flat: true,
+            ),
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -141,10 +187,13 @@ class _TimelineScreenState extends State<TimelineScreen> {
               ),
             ],
           ),
-          const Icon(
-            Icons.settings_outlined,
-            size: 22,
-            color: AppColors.text,
+          InkWell(
+            onTap: _load,
+            child: const Icon(
+              Icons.refresh,
+              size: 22,
+              color: AppColors.text,
+            ),
           ),
         ],
       ),
@@ -170,7 +219,7 @@ class _TimelineScreenState extends State<TimelineScreen> {
 
     return Expanded(
       child: InkWell(
-        onTap: () => setState(() => _tab = index),
+        onTap: () => _switchTab(index),
         child: Padding(
           padding: const EdgeInsets.only(top: 10),
           child: Column(
@@ -193,48 +242,6 @@ class _TimelineScreenState extends State<TimelineScreen> {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _shareButton(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.brand.withOpacity(0.35),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Material(
-        color: AppColors.brand,
-        borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(AppSizes.radiusPill),
-          onTap: () {},
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 19, vertical: 13),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add, size: 18, color: AppColors.background),
-                SizedBox(width: 7),
-                Text(
-                  'share',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    height: 1.55,
-                    color: AppColors.background,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),
