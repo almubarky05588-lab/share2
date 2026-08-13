@@ -19,7 +19,7 @@ class MentionsScreen extends StatefulWidget {
 }
 
 class MentionsScreenState extends State<MentionsScreen> {
-  int _tab = 0; // 0 الكل · 1 المنشن · 2 التفاعلات
+  int _tab = 0;
 
   bool _loading = true;
   List<NotificationItem> _items = const [];
@@ -30,7 +30,6 @@ class MentionsScreenState extends State<MentionsScreen> {
     _load();
   }
 
-  /// يُستدعى من الهيكل عند فتح التبويب
   void reload() => _load();
 
   Future<void> _load() async {
@@ -221,7 +220,7 @@ class MentionsScreenState extends State<MentionsScreen> {
   }
 }
 
-/// صف إشعار واحد — كل النصوص بمحاذاة اليمين
+/// صف إشعار — كل شيء يبدأ من اليمين بجانب الصورة
 class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.item,
@@ -237,91 +236,81 @@ class _NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.screenPadding,
-          vertical: 14,
-        ),
-        decoration: BoxDecoration(
-          color: item.unread
-              ? AppColors.brand.withOpacity(0.05)
-              : AppColors.background,
-          border: const Border(
-            bottom: BorderSide(color: AppColors.border),
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.screenPadding,
+            vertical: 14,
           ),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(item.icon, size: 18, color: item.iconColor),
-            const SizedBox(width: 11),
-            GestureDetector(
-              onTap: item.actorId == null
-                  ? null
-                  : () => onOpenProfile?.call(item.actorId!),
-              child: AvatarCircle(
-                initial: item.initial,
-                seed: item.avatarSeed,
-                imageUrl: item.avatarUrl,
-                size: AppSizes.avatarMedium,
-              ),
+          decoration: BoxDecoration(
+            color: item.unread
+                ? AppColors.brand.withOpacity(0.05)
+                : AppColors.background,
+            border: const Border(
+              bottom: BorderSide(color: AppColors.border),
             ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    textDirection: TextDirection.rtl,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GestureDetector(
+                onTap: item.actorId == null
+                    ? null
+                    : () => onOpenProfile?.call(item.actorId!),
+                child: AvatarCircle(
+                  initial: item.initial,
+                  seed: item.avatarSeed,
+                  imageUrl: item.avatarUrl,
+                  size: AppSizes.avatarMedium,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 5,
+                      runSpacing: 2,
+                      children: [
+                        Text(
                           item.actorName,
-                          overflow: TextOverflow.ellipsis,
                           style: t.titleMedium?.copyWith(fontSize: 14),
                         ),
-                      ),
-                      if (item.verified) ...[
-                        const SizedBox(width: 5),
-                        const Icon(Icons.verified,
-                            size: 15, color: AppColors.blue),
+                        if (item.verified)
+                          const Icon(Icons.verified,
+                              size: 15, color: AppColors.blue),
+                        Text('‎@${item.handle}', style: t.bodySmall),
+                        Text('· ${item.timeAgo}', style: t.bodySmall),
                       ],
-                      const SizedBox(width: 6),
-                      Text('‎@${item.handle}', style: t.bodySmall),
-                      const SizedBox(width: 6),
-                      Text('· ${item.timeAgo}', style: t.bodySmall),
-                    ],
-                  ),
-                  const SizedBox(height: 5),
-                  SizedBox(
-                    width: double.infinity,
-                    child: Text(
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
                       item.actionLabel,
-                      textAlign: TextAlign.right,
                       style: t.bodySmall?.copyWith(color: AppColors.text),
                     ),
-                  ),
-                  if (item.preview != null && item.preview!.isNotEmpty) ...[
-                    const SizedBox(height: 5),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Text(
+                    if (item.preview != null &&
+                        item.preview!.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
                         item.preview!,
-                        textAlign: TextAlign.right,
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                         style: t.bodySmall,
                       ),
-                    ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(width: 10),
+              Icon(item.icon, size: 18, color: item.iconColor),
+            ],
+          ),
         ),
       ),
     );
