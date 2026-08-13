@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   analyze:
     name: تحليل وبناء
@@ -21,6 +24,7 @@ jobs:
           cache: true
 
       - name: توليد مجلدات المنصات إن لم تكن موجودة
+        id: gen
         run: |
           if [ ! -d "ios" ]; then
             flutter create \
@@ -28,6 +32,9 @@ jobs:
               --org sa.almubarky \
               --platforms=ios,android \
               .
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "generated=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: إزالة الملفات المولّدة غير المطلوبة
@@ -35,6 +42,15 @@ jobs:
           rm -f test/widget_test.dart
           rm -rf .idea
           rm -f share_app.iml android/share_app_android.iml
+
+      - name: حفظ مجلدي ios و android في المستودع
+        if: steps.gen.outputs.generated == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A ios android analysis_options.yaml .gitignore
+          git commit -m "إضافة مجلدي ios و android المولّدين"
+          git push
 
       - name: جلب الحزم
         run: flutter pub get
@@ -44,13 +60,3 @@ jobs:
 
       - name: بناء iOS بدون توقيع
         run: flutter build ios --release --no-codesign
-
-      - name: رفع مجلدات المنصات المولّدة
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: platform-folders
-          path: |
-            ios/
-            android/
-          retention-days: 7
