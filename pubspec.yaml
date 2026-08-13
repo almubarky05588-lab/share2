@@ -15,6 +15,7 @@ dependencies:
   google_fonts: ^6.2.1
   image_picker: ^1.1.2
   video_player: ^2.9.2
+  visibility_detector: ^0.4.0+2
   mime: ^1.0.5
 
 dev_dependencies:
@@ -22,3 +23,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/480F58B0-B46F-490B-A1DF-3664552353E1.png
