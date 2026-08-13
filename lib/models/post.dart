@@ -16,9 +16,9 @@ class Post {
     this.likes = 0,
     this.reshares = 0,
     this.comments = 0,
+    this.views = 0,
     this.likedByMe = false,
     this.resharedByMe = false,
-    this.bookmarkedByMe = false,
     this.mediaUrl,
     this.mediaType,
     this.replyTo,
@@ -37,9 +37,9 @@ class Post {
   final int likes;
   final int reshares;
   final int comments;
+  final int views;
   final bool likedByMe;
   final bool resharedByMe;
-  final bool bookmarkedByMe;
 
   final String? mediaUrl;
   final String? mediaType; // image | video
@@ -67,9 +67,9 @@ class Post {
   Post copyWith({
     int? likes,
     int? reshares,
+    int? views,
     bool? likedByMe,
     bool? resharedByMe,
-    bool? bookmarkedByMe,
   }) =>
       Post(
         id: id,
@@ -83,9 +83,9 @@ class Post {
         likes: likes ?? this.likes,
         reshares: reshares ?? this.reshares,
         comments: comments,
+        views: views ?? this.views,
         likedByMe: likedByMe ?? this.likedByMe,
         resharedByMe: resharedByMe ?? this.resharedByMe,
-        bookmarkedByMe: bookmarkedByMe ?? this.bookmarkedByMe,
         mediaUrl: mediaUrl,
         mediaType: mediaType,
         replyTo: replyTo,
@@ -100,9 +100,9 @@ class Post {
     final likes = (row['like_count'] as num?)?.toInt() ?? 0;
     final reshares = (row['reshare_count'] as num?)?.toInt() ?? 0;
     final replies = (row['reply_count'] as num?)?.toInt() ?? 0;
+    final views = (row['view_count'] as num?)?.toInt() ?? 0;
     final likedByMe = row['liked_by_me'] as bool? ?? false;
     final resharedByMe = row['reshared_by_me'] as bool? ?? false;
-    final bookmarked = row['bookmarked_by_me'] as bool? ?? false;
 
     Post? original;
 
@@ -121,9 +121,9 @@ class Post {
         likes: likes,
         reshares: reshares,
         comments: replies,
+        views: views,
         likedByMe: likedByMe,
         resharedByMe: resharedByMe,
-        bookmarkedByMe: bookmarked,
       );
     }
 
@@ -139,9 +139,9 @@ class Post {
       likes: likes,
       reshares: reshares,
       comments: replies,
+      views: views,
       likedByMe: likedByMe,
       resharedByMe: resharedByMe,
-      bookmarkedByMe: bookmarked,
       mediaUrl: row['media_url'] as String?,
       mediaType: row['media_type'] as String?,
       replyTo: row['reply_to']?.toString(),
