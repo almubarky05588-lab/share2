@@ -14,10 +14,12 @@ class UserProfile {
     required this.posts,
     this.avatarUrl,
     this.location,
+    this.website,
     this.joined,
     this.verified = false,
     this.followsYou = false,
     this.isFollowing = false,
+    this.isBlocked = false,
   });
 
   final String id;
@@ -29,12 +31,34 @@ class UserProfile {
   final int posts;
   final String? avatarUrl;
   final String? location;
+  final String? website;
   final String? joined;
   final bool verified;
   final bool followsYou;
   final bool isFollowing;
 
+  /// هل حظرتُ هذا المستخدم
+  final bool isBlocked;
+
   String get initial => name.isEmpty ? '؟' : name.characters.first;
+
+  /// الرابط كاملًا للفتح
+  String? get websiteUrl {
+    final w = website?.trim();
+    if (w == null || w.isEmpty) return null;
+    if (w.startsWith('http://') || w.startsWith('https://')) return w;
+    return 'https://$w';
+  }
+
+  /// الرابط مختصرًا للعرض
+  String? get websiteLabel {
+    final w = website?.trim();
+    if (w == null || w.isEmpty) return null;
+    return w
+        .replaceFirst('https://', '')
+        .replaceFirst('http://', '')
+        .replaceFirst(RegExp(r'/$'), '');
+  }
 
   Color get avatarSeed {
     const palette = [
@@ -59,26 +83,31 @@ class UserProfile {
 
   UserProfile copyWith({
     String? name,
+    String? handle,
     String? bio,
     String? location,
+    String? website,
     String? avatarUrl,
     bool? isFollowing,
+    bool? isBlocked,
     int? followers,
   }) =>
       UserProfile(
         id: id,
         name: name ?? this.name,
-        handle: handle,
+        handle: handle ?? this.handle,
         bio: bio ?? this.bio,
         followers: followers ?? this.followers,
         following: following,
         posts: posts,
         avatarUrl: avatarUrl ?? this.avatarUrl,
         location: location ?? this.location,
+        website: website ?? this.website,
         joined: joined,
         verified: verified,
         followsYou: followsYou,
         isFollowing: isFollowing ?? this.isFollowing,
+        isBlocked: isBlocked ?? this.isBlocked,
       );
 
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
@@ -91,9 +120,11 @@ class UserProfile {
         posts: (map['posts'] as num?)?.toInt() ?? 0,
         avatarUrl: map['avatar_url'] as String?,
         location: map['location'] as String?,
+        website: map['website'] as String?,
         joined: map['joined'] as String?,
         verified: map['verified'] as bool? ?? false,
         followsYou: map['follows_you'] as bool? ?? false,
         isFollowing: map['is_following'] as bool? ?? false,
+        isBlocked: map['is_blocked'] as bool? ?? false,
       );
 }
