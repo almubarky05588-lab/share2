@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/share_bottom_nav.dart';
 import 'compose_screen.dart';
@@ -21,13 +22,31 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late int _index = widget.initialIndex;
 
-  void _openCompose() {
-    Navigator.of(context).push(
+  final _timelineKey = GlobalKey<TimelineScreenState>();
+
+  Future<void> _openCompose() async {
+    final body = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => const ComposeScreen(),
       ),
     );
+
+    if (body == null || body.trim().isEmpty) return;
+
+    try {
+      await SupabaseService.instance.createPost(body.trim());
+      await _timelineKey.currentState?.refresh();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم نشر المنشور')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذّر نشر المنشور')),
+      );
+    }
   }
 
   @override
@@ -37,7 +56,7 @@ class _AppShellState extends State<AppShell> {
       body: IndexedStack(
         index: _index,
         children: [
-          const TimelineScreen(showChrome: false),
+          TimelineScreen(key: _timelineKey, showChrome: false),
           const _ExploreScreen(),
           const MentionsScreen(showChrome: false),
           const MessagesScreen(showChrome: false),
