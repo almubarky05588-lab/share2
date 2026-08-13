@@ -21,10 +21,10 @@ jobs:
       - name: توليد الأيقونات
         run: |
           python - <<'PY'
-          from PIL import Image, ImageChops
+          from PIL import Image
           import json, os
 
-          SRC = 'assets/IMG_7265.png'
+          SRC = 'assets/9FCDEB41-ED56-422D-8597-F53A667334D0.png'
           OUT = 'ios/Runner/Assets.xcassets/AppIcon.appiconset'
 
           img = Image.open(SRC).convert('RGBA')
@@ -34,23 +34,16 @@ jobs:
           bg.alpha_composite(img)
           img = bg.convert('RGB')
 
-          # قصّ الهوامش البيضاء الزائدة حول الشعار
-          white = Image.new('RGB', img.size, (255, 255, 255))
-          diff = ImageChops.difference(img, white)
-          box = diff.getbbox()
-          if box:
-              img = img.crop(box)
-
-          # مربّع بهامش 16٪ من الجانب الأطول
+          # قصّ مربّع من المنتصف إن لم تكن مربّعة
           w, h = img.size
-          side = max(w, h)
-          canvas = int(side * 1.32)
+          side = min(w, h)
+          img = img.crop((
+              (w - side) // 2,
+              (h - side) // 2,
+              (w - side) // 2 + side,
+              (h - side) // 2 + side,
+          ))
 
-          square = Image.new('RGB', (canvas, canvas), (255, 255, 255))
-          square.paste(img, ((canvas - w) // 2, (canvas - h) // 2))
-          img = square
-
-          # مقاسات iOS
           sizes = [
               (20, 1), (20, 2), (20, 3),
               (29, 1), (29, 2), (29, 3),
@@ -62,8 +55,6 @@ jobs:
           ]
 
           os.makedirs(OUT, exist_ok=True)
-
-          # نصدّر من نسخة عالية الدقة لضمان الحدّة
           master = img.resize((1024, 1024), Image.LANCZOS)
 
           images = []
@@ -106,7 +97,7 @@ jobs:
                   indent=2,
               )
 
-          print(f'تم توليد {len(sizes)} أيقونة — الشعار بعد القصّ: {w}x{h}')
+          print(f'تم توليد {len(sizes)} أيقونة من {SRC} — المصدر {w}x{h}')
           PY
 
       - name: حفظ الأيقونات في المستودع
@@ -114,5 +105,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A ios/Runner/Assets.xcassets/AppIcon.appiconset
-          git diff --staged --quiet || git commit -m "توليد أيقونات التطبيق من الشعار"
+          git diff --staged --quiet || git commit -m "توليد أيقونات التطبيق من الشعار الجديد"
           git push
