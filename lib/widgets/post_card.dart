@@ -1,7 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/post.dart';
+import '../screens/media_viewer_screen.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import 'avatar_circle.dart';
@@ -16,6 +18,7 @@ class PostCard extends StatefulWidget {
     this.onOpenPost,
     this.onReply,
     this.onChanged,
+    this.onDeleted,
   });
 
   final Post post;
@@ -24,6 +27,7 @@ class PostCard extends StatefulWidget {
   final void Function(Post post)? onOpenPost;
   final void Function(Post post)? onReply;
   final VoidCallback? onChanged;
+  final VoidCallback? onDeleted;
 
   @override
   State<PostCard> createState() => _PostCardState();
@@ -42,6 +46,30 @@ class _PostCardState extends State<PostCard> {
   /// المنشور المعروض فعليًا (الأصلي عند الريشير)
   Post get _shown => _post.resharedFrom ?? _post;
 
+  bool get _isMine =>
+      _shown.authorId == SupabaseService.instance.currentUserId;
+
+  bool get _isMyReshare =>
+      _post.authorId == SupabaseService.instance.currentUserId;
+
+  void _apply(Post updated) {
+    setState(() {
+      _post = _post.resharedFrom != null
+          ? Post(
+              id: _post.id,
+              authorId: _post.authorId,
+              authorName: _post.authorName,
+              handle: _post.handle,
+              body: _post.body,
+              timeAgo: _post.timeAgo,
+              avatarUrl: _post.avatarUrl,
+              verified: _post.verified,
+              resharedFrom: updated,
+            )
+          : updated;
+    });
+  }
+
   Future<void> _toggleLike() async {
     if (_busy) return;
     final target = _shown;
@@ -52,28 +80,10 @@ class _PostCardState extends State<PostCard> {
     try {
       await SupabaseService.instance.setLike(target.id, next);
       if (!mounted) return;
-
-      setState(() {
-        final updated = target.copyWith(
-          likedByMe: next,
-          likes: target.likes + (next ? 1 : -1),
-        );
-
-        _post = _post.resharedFrom != null
-            ? Post(
-                id: _post.id,
-                authorId: _post.authorId,
-                authorName: _post.authorName,
-                handle: _post.handle,
-                body: _post.body,
-                timeAgo: _post.timeAgo,
-                avatarUrl: _post.avatarUrl,
-                verified: _post.verified,
-                resharedFrom: updated,
-              )
-            : updated;
-      });
-
+      _apply(target.copyWith(
+        likedByMe: next,
+        likes: target.likes + (next ? 1 : -1),
+      ));
       widget.onChanged?.call();
     } catch (_) {
       _snack('تعذّر تنفيذ الإعجاب');
@@ -92,6 +102,10 @@ class _PostCardState extends State<PostCard> {
     try {
       await SupabaseService.instance.toggleReshare(target.id, next);
       if (!mounted) return;
+      _apply(target.copyWith(
+        resharedByMe: next,
+        reshares: target.reshares + (next ? 1 : -1),
+      ));
       _snack(next ? 'تمت إعادة النشر' : 'أُلغيت إعادة النشر');
       widget.onChanged?.call();
     } catch (_) {
@@ -99,6 +113,207 @@ class _PostCardState extends State<PostCard> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _toggleBookmark() async {
+    final target = _shown;
+    final next = !target.bookmarkedByMe;
+
+    try {
+      await SupabaseService.instance.setBookmark(target.id, next);
+      if (!mounted) return;
+      _apply(target.copyWith(bookmarkedByMe: next));
+      _snack(next ? 'أُضيف للمفضلة' : 'أُزيل من المفضلة');
+    } catch (_) {
+      _snack('تعذّر تحديث المفضلة');
+    }
+  }
+
+  Future<void> _copyLink() async {
+    final link = SupabaseService.instance.postLink(_shown.id);
+    await Clipboard.setData(ClipboardData(text: link));
+    _snack('نُسخ رابط المنشور');
+  }
+
+  Future<void> _delete() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('حذف المنشور'),
+        content: const Text('هل تريد حذف هذا المنشور نهائيًا؟'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('حذف',
+                style: TextStyle(color: AppColors.like)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      // حذف الريشير يحذف نسختي فقط، لا المنشور الأصلي
+      final id = _isMyReshare && _post.resharedFrom != null
+          ? _post.id
+          : _shown.id;
+      await SupabaseService.instance.deletePost(id);
+      if (!mounted) return;
+      _snack('حُذف المنشور');
+      widget.onDeleted?.call();
+      widget.onChanged?.call();
+    } catch (_) {
+      _snack('تعذّر الحذف');
+    }
+  }
+
+  Future<void> _block() async {
+    final target = _shown;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('حظر ${target.authorName}'),
+        content: const Text(
+          'لن تظهر لك منشوراته، ولن يتابع أحدكما الآخر.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('حظر',
+                style: TextStyle(color: AppColors.like)),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    try {
+      await SupabaseService.instance.setBlock(target.authorId, true);
+      if (!mounted) return;
+      _snack('تم الحظر');
+      widget.onChanged?.call();
+    } catch (_) {
+      _snack('تعذّر الحظر');
+    }
+  }
+
+  void _openMenu() {
+    final target = _shown;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _menuItem(
+              ctx,
+              icon: target.bookmarkedByMe
+                  ? Icons.bookmark
+                  : Icons.bookmark_border,
+              label: target.bookmarkedByMe
+                  ? 'إزالة من المفضلة'
+                  : 'إضافة للمفضلة',
+              onTap: _toggleBookmark,
+            ),
+            _menuItem(
+              ctx,
+              icon: Icons.link,
+              label: 'نسخ رابط المنشور',
+              onTap: _copyLink,
+            ),
+            if (_isMine || _isMyReshare)
+              _menuItem(
+                ctx,
+                icon: Icons.delete_outline,
+                label: 'حذف المنشور',
+                color: AppColors.like,
+                onTap: _delete,
+              ),
+            if (!_isMine)
+              _menuItem(
+                ctx,
+                icon: Icons.block,
+                label: 'حظر ${target.authorName}',
+                color: AppColors.like,
+                onTap: _block,
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _menuItem(
+    BuildContext ctx, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color color = AppColors.text,
+  }) {
+    return InkWell(
+      onTap: () {
+        Navigator.of(ctx).pop();
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontSize: 15, color: color),
+            ),
+            const SizedBox(width: 12),
+            Icon(icon, size: 20, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openMedia() {
+    final p = _shown;
+    if (!p.hasMedia) return;
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MediaViewerScreen(
+          url: p.mediaUrl!,
+          isVideo: p.isVideo,
+        ),
+      ),
+    );
   }
 
   void _snack(String text) {
@@ -144,8 +359,10 @@ class _PostCardState extends State<PostCard> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       _header(context, p),
-                      const SizedBox(height: 7),
-                      _body(context, p),
+                      if (p.body.isNotEmpty) ...[
+                        const SizedBox(height: 7),
+                        _body(context, p),
+                      ],
                       if (p.hasMedia) ...[
                         const SizedBox(height: 9),
                         _media(p),
@@ -189,6 +406,15 @@ class _PostCardState extends State<PostCard> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        InkWell(
+          onTap: _openMenu,
+          borderRadius: BorderRadius.circular(14),
+          child: const Padding(
+            padding: EdgeInsets.all(3),
+            child: Icon(Icons.more_horiz,
+                size: AppSizes.iconSmall, color: AppColors.textMuted),
+          ),
+        ),
         Flexible(
           child: GestureDetector(
             onTap: () => widget.onOpenProfile?.call(p.authorId),
@@ -217,8 +443,6 @@ class _PostCardState extends State<PostCard> {
             ),
           ),
         ),
-        const Icon(Icons.more_horiz,
-            size: AppSizes.iconSmall, color: AppColors.textMuted),
       ],
     );
   }
@@ -226,7 +450,6 @@ class _PostCardState extends State<PostCard> {
   /// نص المنشور مع تلوين المنشن والهاشتاق
   Widget _body(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
-    if (p.body.isEmpty) return const SizedBox.shrink();
 
     final spans = <InlineSpan>[];
     final re = RegExp(r'([@#][\w\u0600-\u06FF._]+)');
@@ -268,45 +491,55 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _media(Post p) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppSizes.radiusMedia),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Image.network(
-            p.mediaUrl!,
-            width: double.infinity,
-            height: 220,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              height: 220,
-              color: AppColors.border,
-              alignment: Alignment.center,
-              child: const Icon(Icons.broken_image_outlined,
-                  color: AppColors.textMuted),
-            ),
-            loadingBuilder: (context, child, progress) => progress == null
-                ? child
-                : Container(
-                    height: 220,
-                    color: AppColors.border.withOpacity(0.4),
-                    alignment: Alignment.center,
-                    child: const CircularProgressIndicator(
-                        color: AppColors.brand, strokeWidth: 2),
-                  ),
-          ),
-          if (p.isVideo)
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.55),
-                shape: BoxShape.circle,
+    return GestureDetector(
+      onTap: _openMedia,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppSizes.radiusMedia),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (p.isVideo)
+              Container(
+                width: double.infinity,
+                height: 220,
+                color: AppColors.text,
+              )
+            else
+              Image.network(
+                p.mediaUrl!,
+                width: double.infinity,
+                height: 240,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 240,
+                  color: AppColors.border,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.broken_image_outlined,
+                      color: AppColors.textMuted),
+                ),
+                loadingBuilder: (context, child, progress) => progress == null
+                    ? child
+                    : Container(
+                        height: 240,
+                        color: AppColors.border.withOpacity(0.4),
+                        alignment: Alignment.center,
+                        child: const CircularProgressIndicator(
+                            color: AppColors.brand, strokeWidth: 2),
+                      ),
               ),
-              child: const Icon(Icons.play_arrow,
-                  color: Colors.white, size: 32),
-            ),
-        ],
+            if (p.isVideo)
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.9),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.play_arrow,
+                    color: AppColors.text, size: 34),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -340,10 +573,10 @@ class _PostCardState extends State<PostCard> {
         ),
         _action(
           context,
-          icon: Icons.ios_share,
+          icon: p.bookmarkedByMe ? Icons.bookmark : Icons.bookmark_border,
           count: null,
-          color: AppColors.textMuted,
-          onTap: () {},
+          color: p.bookmarkedByMe ? AppColors.brand : AppColors.textMuted,
+          onTap: _toggleBookmark,
         ),
       ],
     );
@@ -366,7 +599,7 @@ class _PostCardState extends State<PostCard> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: AppSizes.iconSmall, color: color),
-            if (count != null) ...[
+            if (count != null && count > 0) ...[
               const SizedBox(width: 6),
               Text(
                 _format(count),
@@ -384,7 +617,6 @@ class _PostCardState extends State<PostCard> {
   }
 
   static String _format(int n) {
-    if (n <= 0) return '';
     if (n < 1000) return '$n';
     final v = (n / 1000).toStringAsFixed(1).replaceAll('.0', '');
     return '$v ألف';
