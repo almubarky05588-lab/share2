@@ -4,10 +4,14 @@ import '../models/conversation.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/share_bottom_nav.dart';
+import 'chat_screen.dart';
 
 /// الرسائل الخاصة — الشاشة ٣ من التصميم
 class MessagesScreen extends StatefulWidget {
-  const MessagesScreen({super.key});
+  const MessagesScreen({super.key, this.showChrome = true});
+
+  /// false عند العرض داخل AppShell — شريط التنقل يأتي من الهيكل
+  final bool showChrome;
 
   @override
   State<MessagesScreen> createState() => _MessagesScreenState();
@@ -72,6 +76,18 @@ class _MessagesScreenState extends State<MessagesScreen> {
         .toList();
   }
 
+  void _openChat(Conversation c) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          name: c.name,
+          handle: c.handle,
+          verified: c.verified,
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -96,14 +112,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   : ListView.builder(
                       padding: EdgeInsets.zero,
                       itemCount: list.length,
-                      itemBuilder: (_, i) =>
-                          _ConversationTile(conversation: list[i]),
+                      itemBuilder: (_, i) => _ConversationTile(
+                        conversation: list[i],
+                        onTap: () => _openChat(list[i]),
+                      ),
                     ),
             ),
           ],
         ),
       ),
-      bottomNavigationBar: const ShareBottomNav(currentIndex: 3),
+      bottomNavigationBar:
+          widget.showChrome ? const ShareBottomNav(currentIndex: 3) : null,
     );
   }
 
@@ -188,9 +207,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
 /// صف محادثة واحدة
 class _ConversationTile extends StatelessWidget {
-  const _ConversationTile({required this.conversation});
+  const _ConversationTile({required this.conversation, this.onTap});
 
   final Conversation conversation;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +218,7 @@ class _ConversationTile extends StatelessWidget {
     final c = conversation;
 
     return InkWell(
-      onTap: () {},
+      onTap: onTap,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(
