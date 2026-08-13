@@ -7,6 +7,7 @@ import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
 import '../widgets/share_bottom_nav.dart';
 import '../widgets/share_logo.dart';
+import 'compose_screen.dart';
 import 'hashtag_screen.dart';
 import 'post_detail_screen.dart';
 import 'profile_screen.dart';
@@ -86,6 +87,12 @@ class TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
+  Future<void> _openHandle(String handle) async {
+    final id = await SupabaseService.instance.userIdByHandle(handle);
+    if (!mounted || id == null) return;
+    _openProfile(id);
+  }
+
   Future<void> _openMyProfile() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -104,6 +111,16 @@ class TimelineScreenState extends State<TimelineScreen> {
       MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
     );
     _load();
+  }
+
+  Future<void> _reply(Post post) async {
+    final done = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ComposeScreen(replyTo: post),
+      ),
+    );
+    if (done == true) _load();
   }
 
   @override
@@ -150,10 +167,12 @@ class TimelineScreenState extends State<TimelineScreen> {
                   itemBuilder: (_, i) => PostCard(
                     post: _posts[i],
                     onOpenProfile: _openProfile,
+                    onOpenHandle: _openHandle,
                     onOpenHashtag: _openHashtag,
                     onOpenPost: _openPost,
-                    onReply: _openPost,
+                    onReply: _reply,
                     onChanged: _load,
+                    onDeleted: _load,
                   ),
                 ),
     );
@@ -189,32 +208,13 @@ class TimelineScreenState extends State<TimelineScreen> {
     );
   }
 
+  /// الصورة يمين · الشعار وسط
   Widget _header(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(right: 18, left: 18, top: 8, bottom: 10),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        textDirection: TextDirection.rtl,
         children: [
-          const SizedBox(width: 34),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ShareLogo(
-                size: 30,
-                color: AppColors.background,
-                background: AppColors.brand,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'share',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w900,
-                      color: AppColors.brand,
-                    ),
-              ),
-            ],
-          ),
           GestureDetector(
             onTap: _openMyProfile,
             child: AvatarCircle(
@@ -225,6 +225,30 @@ class TimelineScreenState extends State<TimelineScreen> {
               flat: true,
             ),
           ),
+          Expanded(
+            child: Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ShareLogo(
+                    size: 30,
+                    color: AppColors.background,
+                    background: AppColors.brand,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'share',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontSize: 21,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.brand,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 34),
         ],
       ),
     );
