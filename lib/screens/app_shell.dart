@@ -1,15 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/share_bottom_nav.dart';
 import 'compose_screen.dart';
 import 'explore_screen.dart';
 import 'mentions_screen.dart';
 import 'messages_screen.dart';
-import 'profile_screen.dart';
 import 'timeline_screen.dart';
 
-/// الهيكل الرئيسي — يربط شريط التنقل بالشاشات الخمس
+/// الهيكل الرئيسي — أربع شاشات في شريط التنقل
 class AppShell extends StatefulWidget {
   const AppShell({super.key, this.initialIndex = 0});
 
@@ -21,8 +23,44 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late int _index = widget.initialIndex;
+  int _badge = 0;
+  Timer? _timer;
 
   final _timelineKey = GlobalKey<TimelineScreenState>();
+  final _mentionsKey = GlobalKey<MentionsScreenState>();
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshBadge();
+    _timer = Timer.periodic(
+      const Duration(seconds: 45),
+      (_) => _refreshBadge(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshBadge() async {
+    final n = await SupabaseService.instance.unreadNotificationsCount();
+    if (!mounted) return;
+    setState(() => _badge = n);
+  }
+
+  Future<void> _onTabTap(int i) async {
+    setState(() => _index = i);
+
+    if (i == 2) {
+      await SupabaseService.instance.markNotificationsSeen();
+      if (!mounted) return;
+      setState(() => _badge = 0);
+      _mentionsKey.currentState?.reload();
+    }
+  }
 
   Future<void> _openCompose() async {
     final posted = await Navigator.of(context).push<bool>(
@@ -50,14 +88,14 @@ class _AppShellState extends State<AppShell> {
         children: [
           TimelineScreen(key: _timelineKey, showChrome: false),
           const ExploreScreen(),
-          const MentionsScreen(showChrome: false),
+          MentionsScreen(key: _mentionsKey, showChrome: false),
           const MessagesScreen(showChrome: false),
-          const ProfileScreen(),
         ],
       ),
       bottomNavigationBar: ShareBottomNav(
         currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
+        mentionsBadge: _badge,
+        onTap: _onTabTap,
       ),
       floatingActionButton: _index == 0 ? _shareButton() : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
