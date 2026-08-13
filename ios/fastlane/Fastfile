@@ -23,6 +23,17 @@ platform :ios do
       readonly: false
     )
 
+    # ضبط التوقيع اليدوي في مشروع Xcode — يمنع خطأ "requires a development team"
+    update_code_signing_settings(
+      path: "Runner.xcodeproj",
+      use_automatic_signing: false,
+      team_id: "5V6TC85KRL",
+      targets: ["Runner"],
+      code_sign_identity: "Apple Distribution",
+      bundle_identifier: "sa.almubarky.shareApp",
+      profile_name: "match AppStore sa.almubarky.shareApp"
+    )
+
     # رقم بناء جديد في كل مرة — مأخوذ من رقم تشغيل GitHub Actions
     increment_build_number(
       xcodeproj: "Runner.xcodeproj",
