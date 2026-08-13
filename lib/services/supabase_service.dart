@@ -76,6 +76,42 @@ class SupabaseService {
     return rows.map<Post>(_post).toList();
   }
 
+  /// بث حي لأي منشور جديد
+  RealtimeChannel watchNewPosts(void Function() onInsert) {
+    return _db
+        .channel('public:posts')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'posts',
+          callback: (_) => onInsert(),
+        )
+        .subscribe();
+  }
+
+  Future<void> unwatch(RealtimeChannel channel) async {
+    await _db.removeChannel(channel);
+  }
+
+  /// عدد المنشورات الأحدث من وقت معيّن
+  Future<int> countPostsSince(DateTime since, {bool followingOnly = false}) async {
+    final uid = currentUserId;
+    if (uid == null) return 0;
+
+    try {
+      var q = _db
+          .from('posts_feed')
+          .count()
+          .isFilter('reply_to', null)
+          .neq('author_id', uid)
+          .gt('created_at', since.toUtc().toIso8601String());
+
+      return await q;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   Future<List<Post>> fetchUserPosts(String userId) async {
     final rows = await _db
         .from('posts_feed')
@@ -148,7 +184,6 @@ class SupabaseService {
     return list.take(20).toList();
   }
 
-  /// المنشورات التي أعجبني — تبويب المفضلة
   Future<List<Post>> fetchLikedPosts(String userId) async {
     final rows = await _db
         .from('likes')
@@ -169,7 +204,6 @@ class SupabaseService {
     return posts.map<Post>(_post).toList();
   }
 
-  /// تسجيل مشاهدة — مرة واحدة لكل مستخدم
   Future<void> recordView(String postId) async {
     final uid = currentUserId;
     if (uid == null) return;
@@ -178,9 +212,7 @@ class SupabaseService {
       await _db
           .from('post_views')
           .upsert({'post_id': postId, 'user_id': uid});
-    } catch (_) {
-      // غير حرج
-    }
+    } catch (_) {}
   }
 
   // ── النشر والتفاعل ───────────────────────────────────────
@@ -222,13 +254,10 @@ class SupabaseService {
         await _db
             .from('mentions')
             .insert({'post_id': postId, 'user_id': u['id']});
-      } catch (_) {
-        // المستخدم حاظر أو محظور — نتجاوزه بلا إيقاف النشر
-      }
+      } catch (_) {}
     }
   }
 
-  /// إعادة النشر — أو التراجع عنها
   Future<void> toggleReshare(String postId, bool on) async {
     final uid = currentUserId;
     if (uid == null) throw StateError('غير مسجّل الدخول');
@@ -240,7 +269,6 @@ class SupabaseService {
           'reshare_of': postId,
         });
       } on PostgrestException catch (e) {
-        // 23505 = مكرر: الريشير موجود مسبقًا
         if (e.code != '23505') rethrow;
       }
     } else {
@@ -307,7 +335,6 @@ class SupabaseService {
     }
   }
 
-  /// هل حظرتُ هذا المستخدم
   Future<bool> isBlocked(String userId) async {
     final uid = currentUserId;
     if (uid == null) return false;
@@ -322,7 +349,6 @@ class SupabaseService {
     return row != null;
   }
 
-  /// هل حظرني هذا المستخدم
   Future<bool> blockedMe(String userId) async {
     final uid = currentUserId;
     if (uid == null) return false;
@@ -512,6 +538,15 @@ class SupabaseService {
 
   // ── الرسائل ──────────────────────────────────────────────
 
+  /// يفتح محادثة مع مستخدم — ينشئها إن لم تكن موجودة
+  Future<String> openConversationWith(String otherUserId) async {
+    final id = await _db.rpc(
+      'get_or_create_conversation',
+      params: {'other_id': otherUserId},
+    );
+    return id.toString();
+  }
+
   Future<List<Conversation>> fetchConversations() async {
     final uid = currentUserId;
     if (uid == null) return [];
@@ -520,7 +555,7 @@ class SupabaseService {
         .from('conversation_members')
         .select(
           'conversation:conversations(id, last_message_at, '
-          'members:conversation_members(user:profiles(id, handle, name, verified)), '
+          'members:conversation_members(user:profiles(id, handle, name, avatar_url, verified)), '
           'messages(body, sender_id, created_at))',
         )
         .eq('user_id', uid)
@@ -552,6 +587,7 @@ class SupabaseService {
         otherUserId: other['id']?.toString() ?? '',
         name: other['name'] as String? ?? '',
         handle: other['handle'] as String? ?? '',
+        avatarUrl: other['avatar_url'] as String?,
         verified: other['verified'] as bool? ?? false,
         lastMessage: last?['body'] as String? ?? '',
         sentByMe: last != null && last['sender_id'] == uid,
