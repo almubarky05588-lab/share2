@@ -581,8 +581,4 @@ class _PostCardState extends State<PostCard> {
   }
 
   static String _format(int n) {
-    if (n < 1000) return '$n';
-    final v = (n / 1000).toStringAsFixed(1).replaceAll('.0', '');
-    return '$v ألف';
-  }
-}
+    if (n
