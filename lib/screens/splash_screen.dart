@@ -22,7 +22,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(milliseconds: 1400), _go);
+    _timer = Timer(const Duration(milliseconds: 1300), _go);
   }
 
   void _go() {
@@ -65,11 +65,6 @@ class _SplashScreenState extends State<SplashScreen> {
                     fontWeight: FontWeight.w900,
                     color: AppColors.brand,
                   ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'تواصل عربي — من اليمين لليسار',
-              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
