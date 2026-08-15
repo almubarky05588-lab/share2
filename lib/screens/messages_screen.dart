@@ -4,6 +4,7 @@ import '../models/conversation.dart';
 import '../models/user_profile.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/share_bottom_nav.dart';
 import 'chat_screen.dart';
@@ -81,7 +82,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     _load();
   }
 
-  /// اختيار مستخدم لبدء محادثة جديدة
   Future<void> _newChat() async {
     final picked = await showModalBottomSheet<UserProfile>(
       context: context,
@@ -148,10 +148,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
                                   const AlwaysScrollableScrollPhysics(),
                               children: [
                                 SizedBox(
-                                  height: MediaQuery.of(context)
-                                          .size
-                                          .height *
-                                      0.25,
+                                  height:
+                                      MediaQuery.of(context).size.height *
+                                          0.25,
                                 ),
                                 Center(
                                   child: Text(
@@ -387,53 +386,54 @@ class _UserPickerSheetState extends State<_UserPickerSheet> {
 
                             return InkWell(
                               onTap: () => Navigator.of(context).pop(u),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 11),
-                                child: Row(
-                                  textDirection: TextDirection.rtl,
-                                  children: [
-                                    AvatarCircle(
-                                      initial: u.initial,
-                                      seed: u.avatarSeed,
-                                      imageUrl: u.avatarUrl,
-                                      size: 44,
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Wrap(
-                                            textDirection:
-                                                TextDirection.rtl,
-                                            crossAxisAlignment:
-                                                WrapCrossAlignment.center,
-                                            spacing: 5,
-                                            children: [
-                                              Text(
-                                                u.name,
+                              child: Directionality(
+                                textDirection: TextDirection.rtl,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 11),
+                                  child: Row(
+                                    children: [
+                                      AvatarCircle(
+                                        initial: u.initial,
+                                        seed: u.avatarSeed,
+                                        imageUrl: u.avatarUrl,
+                                        size: 44,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Wrap(
+                                              crossAxisAlignment:
+                                                  WrapCrossAlignment.center,
+                                              spacing: 5,
+                                              children: [
+                                                Text(
+                                                  u.name,
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .titleMedium
+                                                      ?.copyWith(
+                                                          fontSize: 15),
+                                                ),
+                                                if (u.verified)
+                                                  const Icon(Icons.verified,
+                                                      size: 14,
+                                                      color:
+                                                          AppColors.blue),
+                                              ],
+                                            ),
+                                            Text(atHandle(u.handle),
                                                 style: Theme.of(context)
                                                     .textTheme
-                                                    .titleMedium
-                                                    ?.copyWith(
-                                                        fontSize: 15),
-                                              ),
-                                              if (u.verified)
-                                                const Icon(Icons.verified,
-                                                    size: 14,
-                                                    color: AppColors.blue),
-                                            ],
-                                          ),
-                                          Text('‎@${u.handle}',
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .bodySmall),
-                                        ],
+                                                    .bodySmall),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             );
@@ -459,75 +459,74 @@ class _ConversationTile extends StatelessWidget {
     final t = Theme.of(context).textTheme;
     final c = conversation;
 
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSizes.screenPadding,
-          vertical: 12,
-        ),
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          border: Border(bottom: BorderSide(color: AppColors.border)),
-        ),
-        child: Row(
-          textDirection: TextDirection.rtl,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            AvatarCircle(
-              initial: c.initial,
-              seed: c.avatarSeed,
-              imageUrl: c.avatarUrl,
-              size: 48,
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    textDirection: TextDirection.rtl,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Wrap(
-                          textDirection: TextDirection.rtl,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 5,
-                          runSpacing: 2,
-                          children: [
-                            Text(
-                              c.name,
-                              style: t.titleMedium?.copyWith(fontSize: 14),
-                            ),
-                            if (c.verified)
-                              const Icon(Icons.verified,
-                                  size: 15, color: AppColors.blue),
-                            Text('‎@${c.handle}', style: t.bodySmall),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(c.time, style: t.bodySmall),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    c.preview,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: t.bodySmall?.copyWith(
-                      color: c.unread ? AppColors.text : AppColors.textMuted,
-                      fontWeight:
-                          c.unread ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ],
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.screenPadding,
+            vertical: 12,
+          ),
+          decoration: const BoxDecoration(
+            color: AppColors.background,
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AvatarCircle(
+                initial: c.initial,
+                seed: c.avatarSeed,
+                imageUrl: c.avatarUrl,
+                size: 48,
               ),
-            ),
-          ],
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 5,
+                            runSpacing: 2,
+                            children: [
+                              Text(
+                                c.name,
+                                style: t.titleMedium?.copyWith(fontSize: 14),
+                              ),
+                              if (c.verified)
+                                const Icon(Icons.verified,
+                                    size: 15, color: AppColors.blue),
+                              Text(atHandle(c.handle), style: t.bodySmall),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(c.time, style: t.bodySmall),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      c.preview,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: t.bodySmall?.copyWith(
+                        color: c.unread ? AppColors.text : AppColors.textMuted,
+                        fontWeight:
+                            c.unread ? FontWeight.w600 : FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
