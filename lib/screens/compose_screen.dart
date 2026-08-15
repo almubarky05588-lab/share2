@@ -7,6 +7,7 @@ import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 
 /// نشر جديد أو رد على منشور
@@ -217,92 +218,74 @@ class _ComposeScreenState extends State<ComposeScreen> {
   Widget _originalPost(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Column(
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Column(
+              children: [
+                AvatarCircle(
+                  initial: p.initial,
+                  seed: p.avatarSeed,
+                  imageUrl: p.avatarUrl,
+                  size: 42,
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: 2,
+                  height: 42,
+                  color: AppColors.border,
+                ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  AvatarCircle(
-                    initial: p.initial,
-                    seed: p.avatarSeed,
-                    imageUrl: p.avatarUrl,
-                    size: 42,
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 5,
+                    runSpacing: 2,
+                    children: [
+                      Text(p.authorName,
+                          style: t.titleMedium?.copyWith(fontSize: 14)),
+                      if (p.verified)
+                        const Icon(Icons.verified,
+                            size: 14, color: AppColors.blue),
+                      Text(atHandle(p.handle), style: t.bodySmall),
+                      Text('· ${p.timeAgo}', style: t.bodySmall),
+                    ],
                   ),
-                  const SizedBox(height: 6),
-                  Container(
-                    width: 2,
-                    height: 42,
-                    color: AppColors.border,
+                  if (p.body.isNotEmpty) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      p.body,
+                      style: t.bodyMedium?.copyWith(fontSize: 14),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Text.rich(
+                    TextSpan(
+                      style: t.bodySmall,
+                      children: [
+                        const TextSpan(text: 'ردًّا على '),
+                        TextSpan(
+                          text: atHandle(p.handle),
+                          style:
+                              t.bodySmall?.copyWith(color: AppColors.brand),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Row(
-                      textDirection: TextDirection.rtl,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            p.authorName,
-                            overflow: TextOverflow.ellipsis,
-                            style: t.titleMedium?.copyWith(fontSize: 14),
-                          ),
-                        ),
-                        if (p.verified) ...[
-                          const SizedBox(width: 5),
-                          const Icon(Icons.verified,
-                              size: 14, color: AppColors.blue),
-                        ],
-                        const SizedBox(width: 5),
-                        Text('‎@${p.handle}', style: t.bodySmall),
-                        const SizedBox(width: 5),
-                        Text('· ${p.timeAgo}', style: t.bodySmall),
-                      ],
-                    ),
-                    if (p.body.isNotEmpty) ...[
-                      const SizedBox(height: 5),
-                      SizedBox(
-                        width: double.infinity,
-                        child: Text(
-                          p.body,
-                          textAlign: TextAlign.right,
-                          style: t.bodyMedium?.copyWith(fontSize: 14),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Text.rich(
-                        TextSpan(
-                          style: t.bodySmall,
-                          children: [
-                            const TextSpan(text: 'ردًّا على '),
-                            TextSpan(
-                              text: '‎@${p.handle}',
-                              style: t.bodySmall
-                                  ?.copyWith(color: AppColors.brand),
-                            ),
-                          ],
-                        ),
-                        textAlign: TextAlign.right,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -319,6 +302,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
             borderRadius: BorderRadius.circular(15),
           ),
           child: Row(
+            textDirection: TextDirection.rtl,
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.public, size: 15, color: AppColors.brand),
@@ -341,6 +325,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
     return Padding(
       padding: EdgeInsets.fromLTRB(16, _isReply ? 6 : 0, 16, 10),
       child: Row(
+        textDirection: TextDirection.rtl,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           AvatarCircle(
