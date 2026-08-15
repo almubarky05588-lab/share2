@@ -4,6 +4,7 @@ import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
 import 'auth_screen.dart';
@@ -365,7 +366,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// الغلاف — صورة المستخدم إن وُجدت، وإلا التدرّج
   Widget _head(BuildContext context, UserProfile p) {
     return SizedBox(
       height: 136 + 46,
@@ -490,7 +490,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('‎@${p.handle}', style: t.bodySmall),
+                Text(atHandle(p.handle), style: t.bodySmall),
                 if (p.followsYou) ...[
                   const SizedBox(width: 8),
                   Container(
