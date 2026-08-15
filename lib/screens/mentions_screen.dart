@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/notification_item.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/share_bottom_nav.dart';
 import 'post_detail_screen.dart';
@@ -285,7 +286,7 @@ class _NotificationTile extends StatelessWidget {
                         if (item.verified)
                           const Icon(Icons.verified,
                               size: 15, color: AppColors.blue),
-                        Text('‎@${item.handle}', style: t.bodySmall),
+                        Text(atHandle(item.handle), style: t.bodySmall),
                         Text('· ${item.timeAgo}', style: t.bodySmall),
                       ],
                     ),
