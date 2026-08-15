@@ -54,7 +54,6 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  /// يستمع للرسائل لحظيًا — تصل بلا خروج ودخول
   void _listen() {
     _sub = SupabaseService.instance
         .messageStream(widget.conversationId)
@@ -64,21 +63,17 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages = msgs;
         _loading = false;
       });
-      _scrollToEnd();
+      _toBottom();
     }, onError: (_) {
       if (!mounted) return;
       setState(() => _loading = false);
     });
   }
 
-  void _scrollToEnd() {
+  void _toBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
-      _scroll.animateTo(
-        _scroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-      );
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
   }
 
@@ -198,7 +193,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             size: 15, color: AppColors.blue),
                     ],
                   ),
-                  Text('‎@${widget.handle}', style: t.bodySmall),
+                  Text('\u200F@${widget.handle}', style: t.bodySmall),
                 ],
               ),
             ),
@@ -284,59 +279,49 @@ class _Bubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final mine = message.fromMe;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        mainAxisAlignment:
-            mine ? MainAxisAlignment.start : MainAxisAlignment.end,
-        children: [
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.72,
-            ),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: mine
-                    ? AppColors.brand
-                    : AppColors.border.withOpacity(0.5),
-                borderRadius: BorderRadius.only(
-                  topRight: const Radius.circular(18),
-                  topLeft: const Radius.circular(18),
-                  bottomRight: Radius.circular(mine ? 18 : 4),
-                  bottomLeft: Radius.circular(mine ? 4 : 18),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    message.body,
-                    textAlign: TextAlign.right,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 15,
-                          color:
-                              mine ? AppColors.background : AppColors.text,
-                        ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    message.time,
-                    style: TextStyle(
-                      fontSize: 11,
-                      height: 1.4,
-                      color: mine
-                          ? AppColors.background.withOpacity(0.75)
-                          : AppColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    return Align(
+      alignment: mine ? Alignment.centerLeft : Alignment.centerRight,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.72,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color:
+              mine ? AppColors.brand : AppColors.border.withOpacity(0.5),
+          borderRadius: BorderRadius.only(
+            topRight: const Radius.circular(18),
+            topLeft: const Radius.circular(18),
+            bottomRight: Radius.circular(mine ? 18 : 4),
+            bottomLeft: Radius.circular(mine ? 4 : 18),
           ),
-        ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              message.body,
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 15,
+                    color: mine ? AppColors.background : AppColors.text,
+                  ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              message.time,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: mine
+                    ? AppColors.background.withOpacity(0.75)
+                    : AppColors.textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
