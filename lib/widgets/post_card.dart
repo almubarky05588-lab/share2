@@ -6,6 +6,7 @@ import '../models/post.dart';
 import '../screens/media_viewer_screen.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/handle_text.dart';
 import 'avatar_circle.dart';
 import 'inline_video.dart';
 
@@ -402,7 +403,7 @@ class _PostCardState extends State<PostCard> {
                 if (p.verified)
                   const Icon(Icons.verified,
                       size: 15, color: AppColors.blue),
-                Text('‎@${p.handle}', style: t.bodySmall),
+                Text(atHandle(p.handle), style: t.bodySmall),
                 Text('· ${p.timeAgo}', style: t.bodySmall),
               ],
             ),
@@ -435,15 +436,17 @@ class _PostCardState extends State<PostCard> {
       }
 
       final token = m.group(0)!;
+      final isTag = token.startsWith('#');
+
       spans.add(TextSpan(
-        text: token,
+        text: '\u200F$token\u200F',
         style: t.bodyMedium?.copyWith(
           color: AppColors.brand,
           fontWeight: FontWeight.w600,
         ),
         recognizer: TapGestureRecognizer()
           ..onTap = () {
-            if (token.startsWith('#')) {
+            if (isTag) {
               widget.onOpenHashtag?.call(token.substring(1));
             } else {
               widget.onOpenHandle?.call(token.substring(1));
