@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
+import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 import 'profile_screen.dart';
 
@@ -112,59 +113,58 @@ class _UserListScreenState extends State<UserListScreen> {
   Widget _tile(BuildContext context, UserProfile u) {
     final t = Theme.of(context).textTheme;
 
-    return InkWell(
-      onTap: () => _openProfile(u.id),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: AppColors.border)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      if (u.verified) ...[
-                        const Icon(Icons.verified,
-                            size: 15, color: AppColors.blue),
-                        const SizedBox(width: 5),
-                      ],
-                      Flexible(
-                        child: Text(
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: InkWell(
+        onTap: () => _openProfile(u.id),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AvatarCircle(
+                initial: u.initial,
+                seed: u.avatarSeed,
+                imageUrl: u.avatarUrl,
+                size: 46,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 5,
+                      runSpacing: 2,
+                      children: [
+                        Text(
                           u.name,
-                          overflow: TextOverflow.ellipsis,
                           style: t.titleMedium?.copyWith(fontSize: 15),
                         ),
+                        if (u.verified)
+                          const Icon(Icons.verified,
+                              size: 15, color: AppColors.blue),
+                      ],
+                    ),
+                    Text(atHandle(u.handle), style: t.bodySmall),
+                    if (u.bio.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        u.bio,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.bodySmall,
                       ),
                     ],
-                  ),
-                  Text('‎@${u.handle}', style: t.bodySmall),
-                  if (u.bio.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      u.bio,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: t.bodySmall,
-                    ),
                   ],
-                ],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            AvatarCircle(
-              initial: u.initial,
-              seed: u.avatarSeed,
-              imageUrl: u.avatarUrl,
-              size: 46,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
