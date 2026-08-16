@@ -2,11 +2,11 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../models/battle.dart';
+import 'sound_fx.dart';
 
-/// مشهد استعراض الرتبة — خلفية فاتحة، الصور بخلفيتها البيضاء
+/// مشهد استعراض الرتبة
 class RankShowcase extends StatefulWidget {
   const RankShowcase({
     super.key,
@@ -68,9 +68,6 @@ class _RankShowcaseState extends State<RankShowcase>
     duration: const Duration(milliseconds: 2200),
   );
 
-  final _p1 = AudioPlayer();
-  final _p2 = AudioPlayer();
-
   int _frame = 0;
   bool _shouted = false;
   bool _swung = false;
@@ -110,28 +107,19 @@ class _RankShowcaseState extends State<RankShowcase>
     if (!_shouted && v > 0.22 && _hasFrames) {
       _shouted = true;
       HapticFeedback.heavyImpact();
-      _play(_p1, _shout);
+      SoundFx.play(_shout);
     }
 
     if (!_swung && v > 0.50 && _hasFrames) {
       _swung = true;
       HapticFeedback.mediumImpact();
-      _play(_p2, _swing);
+      SoundFx.play(_swing);
     }
-  }
-
-  Future<void> _play(AudioPlayer p, String asset) async {
-    try {
-      await p.setAsset(asset);
-      await p.play();
-    } catch (_) {}
   }
 
   @override
   void dispose() {
     _c.dispose();
-    _p1.dispose();
-    _p2.dispose();
     super.dispose();
   }
 
@@ -160,7 +148,6 @@ class _RankShowcaseState extends State<RankShowcase>
     );
   }
 
-  /// خلفية متدرّجة فاتحة بلون الرتبة
   Widget _backdrop(BattleRank rank) {
     return Container(
       decoration: BoxDecoration(
@@ -192,7 +179,6 @@ class _RankShowcaseState extends State<RankShowcase>
     );
   }
 
-  /// المحارب — تسلسل الصور بخلفيتها البيضاء
   Widget _warrior() {
     final v = _c.value;
 
@@ -232,7 +218,6 @@ class _RankShowcaseState extends State<RankShowcase>
     );
   }
 
-  /// الاسم والرتبة والسجل
   Widget _info(BuildContext context, BattleRank rank) {
     final show = ((_c.value - 0.6) / 0.4).clamp(0.0, 1.0);
 
