@@ -8,6 +8,15 @@ class RichComposeController extends TextEditingController {
 
   static final _token = RegExp(r'([@#][\w\u0600-\u06FF._]+)');
 
+  /// رموز عزل الاتجاه — تُدرج حول المنشن أثناء الكتابة
+  /// حتى لا تنقلب @ داخل النص العربي، وتُنزع عند النشر.
+  static const lri = '\u2066';
+  static const pdi = '\u2069';
+
+  /// النص النظيف للنشر — بدون رموز العزل
+  String get cleanText =>
+      text.replaceAll(lri, '').replaceAll(pdi, '');
+
   @override
   TextSpan buildTextSpan({
     required BuildContext context,
@@ -49,14 +58,18 @@ class RichComposeController extends TextEditingController {
     final at = before.lastIndexOf('@');
     if (at < 0) return null;
 
-    // لا مسافة بين @ والمؤشّر
+    // لا مسافة ولا عزل بين @ والمؤشّر (العزل يعني منشنًا مكتملًا)
     final chunk = before.substring(at);
-    if (chunk.contains(' ') || chunk.contains('\n')) return null;
+    if (chunk.contains(' ') ||
+        chunk.contains('\n') ||
+        chunk.contains(pdi)) {
+      return null;
+    }
 
     return chunk.substring(1);
   }
 
-  /// يستبدل المنشن الجاري بالمعرّف المختار
+  /// يستبدل المنشن الجاري بالمعرّف المختار — معزول الاتجاه
   void completeMention(String handle) {
     final sel = selection.baseOffset;
     if (sel < 0) return;
@@ -66,11 +79,13 @@ class RichComposeController extends TextEditingController {
     if (at < 0) return;
 
     final after = text.substring(sel);
-    final next = '${text.substring(0, at)}@$handle $after';
+    final inserted = '$lri@$handle$pdi ';
+    final next = '${text.substring(0, at)}$inserted$after';
 
     value = TextEditingValue(
       text: next,
-      selection: TextSelection.collapsed(offset: at + handle.length + 2),
+      selection:
+          TextSelection.collapsed(offset: at + inserted.length),
     );
   }
 }
