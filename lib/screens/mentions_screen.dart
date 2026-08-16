@@ -365,7 +365,7 @@ class _GroupTile extends StatelessWidget {
                         group.preview!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        group.preview!,
+                        bidiSafeMentions(group.preview!),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: t.bodySmall?.copyWith(
@@ -489,7 +489,7 @@ class _NotificationTile extends StatelessWidget {
                         item.preview!.isNotEmpty) ...[
                       const SizedBox(height: 5),
                       Text(
-                        item.preview!,
+                        bidiSafeMentions(item.preview!),
                         maxLines: prominent ? 6 : 2,
                         overflow: TextOverflow.ellipsis,
                         style: prominent
