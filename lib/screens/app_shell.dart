@@ -2,16 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/battle_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/share_bottom_nav.dart';
+import 'battles_screen.dart';
 import 'compose_screen.dart';
 import 'explore_screen.dart';
 import 'mentions_screen.dart';
 import 'messages_screen.dart';
 import 'timeline_screen.dart';
 
-/// الهيكل الرئيسي — أربع شاشات في شريط التنقل
+/// الهيكل الرئيسي — خمس شاشات
 class AppShell extends StatefulWidget {
   const AppShell({super.key, this.initialIndex = 0});
 
@@ -23,7 +25,8 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late int _index = widget.initialIndex;
-  int _badge = 0;
+  int _mentionsBadge = 0;
+  int _battlesBadge = 0;
   Timer? _timer;
 
   final _timelineKey = GlobalKey<TimelineScreenState>();
@@ -32,10 +35,10 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
-    _refreshBadge();
+    _refreshBadges();
     _timer = Timer.periodic(
       const Duration(seconds: 45),
-      (_) => _refreshBadge(),
+      (_) => _refreshBadges(),
     );
   }
 
@@ -45,19 +48,24 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  Future<void> _refreshBadge() async {
+  Future<void> _refreshBadges() async {
     final n = await SupabaseService.instance.unreadNotificationsCount();
+    final pending = await BattleService.instance.fetchPending();
+
     if (!mounted) return;
-    setState(() => _badge = n);
+    setState(() {
+      _mentionsBadge = n;
+      _battlesBadge = pending.length;
+    });
   }
 
   Future<void> _onTabTap(int i) async {
     setState(() => _index = i);
 
-    if (i == 2) {
+    if (i == 3) {
       await SupabaseService.instance.markNotificationsSeen();
       if (!mounted) return;
-      setState(() => _badge = 0);
+      setState(() => _mentionsBadge = 0);
       _mentionsKey.currentState?.reload();
     }
   }
@@ -88,13 +96,15 @@ class _AppShellState extends State<AppShell> {
         children: [
           TimelineScreen(key: _timelineKey, showChrome: false),
           const ExploreScreen(),
+          const BattlesScreen(),
           MentionsScreen(key: _mentionsKey, showChrome: false),
           const MessagesScreen(showChrome: false),
         ],
       ),
       bottomNavigationBar: ShareBottomNav(
         currentIndex: _index,
-        mentionsBadge: _badge,
+        mentionsBadge: _mentionsBadge,
+        battlesBadge: _battlesBadge,
         onTap: _onTabTap,
       ),
       floatingActionButton: _index == 0 ? _shareButton() : null,
