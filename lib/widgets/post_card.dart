@@ -423,6 +423,7 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
+  /// نص المنشور — المنشن والهاشتاق ملوّنان بعزل اتجاه صحيح
   Widget _body(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
@@ -437,9 +438,11 @@ class _PostCardState extends State<PostCard> {
 
       final token = m.group(0)!;
       final isTag = token.startsWith('#');
+      final name = token.substring(1);
 
+      // عزل الاتجاه: LRI … PDI
       spans.add(TextSpan(
-        text: '\u200F$token\u200F',
+        text: '\u2066$token\u2069',
         style: t.bodyMedium?.copyWith(
           color: AppColors.brand,
           fontWeight: FontWeight.w600,
@@ -447,9 +450,9 @@ class _PostCardState extends State<PostCard> {
         recognizer: TapGestureRecognizer()
           ..onTap = () {
             if (isTag) {
-              widget.onOpenHashtag?.call(token.substring(1));
+              widget.onOpenHashtag?.call(name);
             } else {
-              widget.onOpenHandle?.call(token.substring(1));
+              widget.onOpenHandle?.call(name);
             }
           },
       ));
