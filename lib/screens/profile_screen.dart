@@ -7,6 +7,8 @@ import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/post_card.dart';
+import '../widgets/rank_badge.dart';
+import '../widgets/rank_showcase.dart';
 import 'auth_screen.dart';
 import 'chat_screen.dart';
 import 'compose_screen.dart';
@@ -14,6 +16,7 @@ import 'hashtag_screen.dart';
 import 'post_detail_screen.dart';
 import 'settings_screen.dart';
 import 'user_list_screen.dart';
+import 'waves_screen.dart';
 
 /// صفحة المستخدم — بدون userId تعرض ملفي أنا
 class ProfileScreen extends StatefulWidget {
@@ -83,7 +86,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _load();
   }
 
-  /// منشن سريع — يفتح شاشة نشر بمعرّفه جاهزًا
+  /// يعرض مشهد الرتبة
+  void _showRank() {
+    final p = _profile;
+    if (p == null) return;
+
+    RankShowcase.show(
+      context,
+      rank: p.rank,
+      name: p.name,
+      points: p.battlePoints,
+      battles: p.battlesCount,
+      wins: p.battlesWon,
+    );
+  }
+
+  void _openWaves() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const WavesScreen()),
+    );
+  }
+
   Future<void> _mention() async {
     final p = _profile;
     if (p == null) return;
@@ -190,7 +213,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  /// قائمة خيارات المستخدم الآخر
   void _openMenu() {
     final p = _profile;
     if (p == null) return;
@@ -490,12 +512,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onTap: () => Navigator.of(context).maybePop(),
                     ),
                   const Spacer(),
-                  if (_isMe)
+                  if (_isMe) ...[
+                    _circleButton(
+                      icon: Icons.waves,
+                      onTap: _openWaves,
+                    ),
+                    const SizedBox(width: 8),
                     _circleButton(
                       icon: Icons.settings_outlined,
                       onTap: _openSettings,
-                    )
-                  else
+                    ),
+                  ] else
                     _circleButton(
                       icon: Icons.more_horiz,
                       onTap: _openMenu,
@@ -574,6 +601,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: EdgeInsets.only(top: 6),
                     child: Icon(Icons.verified,
                         size: 19, color: AppColors.blue),
+                  ),
+                ],
+                if (p.rank != BattleRankValue.rookie) ...[
+                  const SizedBox(width: 8),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: InkWell(
+                      onTap: _showRank,
+                      borderRadius: BorderRadius.circular(20),
+                      child: RankBadge(
+                        rank: p.rank,
+                        withLabel: true,
+                        size: 15,
+                      ),
+                    ),
                   ),
                 ],
               ],
