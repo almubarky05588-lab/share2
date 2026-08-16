@@ -1,8 +1,8 @@
 import 'dart:math' as math;
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart';
 
 /// مؤثر التحام السيفين — يُعرض عند بدء النزال
 class ClashOverlay extends StatefulWidget {
@@ -10,7 +10,6 @@ class ClashOverlay extends StatefulWidget {
 
   final VoidCallback? onDone;
 
-  /// يعرض المؤثر فوق الشاشة الحالية
   static Future<void> show(BuildContext context) async {
     await showGeneralDialog<void>(
       context: context,
@@ -43,7 +42,14 @@ class _ClashOverlayState extends State<ClashOverlay>
   @override
   void initState() {
     super.initState();
+    _prepare();
     _run();
+  }
+
+  Future<void> _prepare() async {
+    try {
+      await _player.setAsset('assets/clash.mp3');
+    } catch (_) {}
   }
 
   Future<void> _run() async {
@@ -52,7 +58,7 @@ class _ClashOverlayState extends State<ClashOverlay>
         _clashed = true;
         HapticFeedback.heavyImpact();
         _shake.forward(from: 0);
-        _player.play(AssetSource('clash.mp3'));
+        _player.play().catchError((_) {});
       }
     });
 
@@ -83,14 +89,12 @@ class _ClashOverlayState extends State<ClashOverlay>
         builder: (context, _) {
           final t = Curves.easeInCubic.transform(_slide.value);
 
-          // ارتجاج بعد الالتحام
           final shake = _shake.isAnimating
               ? math.sin(_shake.value * math.pi * 6) *
                   8 *
                   (1 - _shake.value)
               : 0.0;
 
-          // وميض
           final flash = _shake.isAnimating
               ? (1 - _shake.value).clamp(0.0, 1.0) * 0.7
               : 0.0;
@@ -104,8 +108,6 @@ class _ClashOverlayState extends State<ClashOverlay>
                   Container(
                     color: Colors.white.withOpacity(flash * 0.45),
                   ),
-
-                // سيف يمين
                 Transform.translate(
                   offset: Offset(w * 0.55 * (1 - t), 0),
                   child: Transform.rotate(
@@ -113,8 +115,6 @@ class _ClashOverlayState extends State<ClashOverlay>
                     child: const _Sword(color: Color(0xFFE0455C)),
                   ),
                 ),
-
-                // سيف يسار
                 Transform.translate(
                   offset: Offset(-w * 0.55 * (1 - t), 0),
                   child: Transform.rotate(
@@ -122,8 +122,6 @@ class _ClashOverlayState extends State<ClashOverlay>
                     child: const _Sword(color: Color(0xFF2F6BFF)),
                   ),
                 ),
-
-                // شرارة الالتحام
                 if (_clashed)
                   Opacity(
                     opacity: flash.clamp(0.0, 1.0),
@@ -142,7 +140,6 @@ class _ClashOverlayState extends State<ClashOverlay>
                       ),
                     ),
                   ),
-
                 Positioned(
                   bottom: MediaQuery.of(context).size.height * 0.28,
                   child: AnimatedOpacity(
@@ -195,7 +192,6 @@ class _SwordPainter extends CustomPainter {
     final h = size.height;
     final cx = w / 2;
 
-    // النصل
     final blade = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
@@ -213,7 +209,6 @@ class _SwordPainter extends CustomPainter {
 
     canvas.drawPath(path, blade);
 
-    // خط وسط النصل
     canvas.drawLine(
       Offset(cx, h * 0.06),
       Offset(cx, h * 0.64),
@@ -222,7 +217,6 @@ class _SwordPainter extends CustomPainter {
         ..strokeWidth = 1.4,
     );
 
-    // المقبض العرضي
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(0, h * 0.66, w, h * 0.045),
@@ -231,7 +225,6 @@ class _SwordPainter extends CustomPainter {
       Paint()..color = color,
     );
 
-    // القبضة
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromLTWH(cx - w * 0.11, h * 0.70, w * 0.22, h * 0.22),
@@ -240,7 +233,6 @@ class _SwordPainter extends CustomPainter {
       Paint()..color = color.withOpacity(0.85),
     );
 
-    // الكرة السفلية
     canvas.drawCircle(
       Offset(cx, h * 0.95),
       w * 0.16,
