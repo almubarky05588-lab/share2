@@ -16,6 +16,7 @@ import 'compose_screen.dart';
 import 'hashtag_screen.dart';
 import 'post_detail_screen.dart';
 import 'settings_screen.dart';
+import 'spoils_screen.dart';
 import 'user_list_screen.dart';
 import 'waves_screen.dart';
 
@@ -87,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _load();
   }
 
-  /// يعرض مشهد الرتبة
+  /// مشهد الرتبة
   void _showRank() {
     final p = _profile;
     if (p == null) return;
@@ -105,6 +106,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _openWaves() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const WavesScreen()),
+    );
+  }
+
+  void _openSpoils() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const SpoilsScreen()),
     );
   }
 
@@ -514,6 +521,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   const Spacer(),
                   if (_isMe) ...[
+                    _circleButton(
+                      icon: Icons.military_tech_outlined,
+                      onTap: _openSpoils,
+                    ),
+                    const SizedBox(width: 8),
                     _circleButton(icon: Icons.waves, onTap: _openWaves),
                     const SizedBox(width: 8),
                     _circleButton(
