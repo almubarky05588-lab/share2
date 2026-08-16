@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../models/battle.dart';
 import '../models/notification_item.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/share_bottom_nav.dart';
+import '../widgets/victory_overlay.dart';
 import 'post_detail_screen.dart';
 import 'profile_screen.dart';
 
@@ -54,6 +56,8 @@ class MentionsScreenState extends State<MentionsScreen> {
       case 1:
         return _items.where((e) => e.isMention).toList();
       case 2:
+        return _items.where((e) => e.isBattle).toList();
+      case 3:
         return _items
             .where((e) =>
                 e.type == NotificationType.like ||
@@ -66,6 +70,25 @@ class MentionsScreenState extends State<MentionsScreen> {
   }
 
   Future<void> _openItem(NotificationItem item) async {
+    // الفوز — يعرض المؤثر
+    if (item.type == NotificationType.battleWon) {
+      final me = await SupabaseService.instance.fetchMyProfile();
+      if (!mounted) return;
+
+      await VictoryOverlay.show(
+        context,
+        points: me?.battlePoints ?? 0,
+        rankUp: null,
+      );
+      return;
+    }
+
+    // التحدي أو الخسارة — يفتح شاشة النزالات
+    if (item.isBattle) {
+      _snack('افتح تبويب النزالات لمتابعة التفاصيل');
+      return;
+    }
+
     if (item.isFollow) {
       if (item.actorId == null) return;
       await Navigator.of(context).push(
@@ -89,6 +112,12 @@ class MentionsScreenState extends State<MentionsScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ProfileScreen(userId: id)),
     );
+  }
+
+  void _snack(String t) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(t)));
   }
 
   @override
@@ -149,7 +178,7 @@ class MentionsScreenState extends State<MentionsScreen> {
         ),
       ),
       bottomNavigationBar:
-          widget.showChrome ? const ShareBottomNav(currentIndex: 2) : null,
+          widget.showChrome ? const ShareBottomNav(currentIndex: 3) : null,
     );
   }
 
@@ -179,7 +208,8 @@ class MentionsScreenState extends State<MentionsScreen> {
         children: [
           _tabItem(context, 'الكل', 0),
           _tabItem(context, 'المنشن', 1),
-          _tabItem(context, 'التفاعلات', 2),
+          _tabItem(context, 'النزالات', 2),
+          _tabItem(context, 'التفاعلات', 3),
         ],
       ),
     );
@@ -199,14 +229,14 @@ class MentionsScreenState extends State<MentionsScreen> {
               Text(
                 label,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                       color: active ? AppColors.text : AppColors.textMuted,
                     ),
               ),
               const SizedBox(height: 8),
               Container(
-                width: 40,
+                width: 36,
                 height: 3,
                 decoration: BoxDecoration(
                   color: active ? AppColors.brand : Colors.transparent,
@@ -221,7 +251,7 @@ class MentionsScreenState extends State<MentionsScreen> {
   }
 }
 
-/// صف إشعار — كل شيء يبدأ من اليمين بجانب الصورة
+/// صف إشعار
 class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.item,
@@ -236,6 +266,7 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
+    final isWin = item.type == NotificationType.battleWon;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -248,9 +279,11 @@ class _NotificationTile extends StatelessWidget {
             vertical: 14,
           ),
           decoration: BoxDecoration(
-            color: item.unread
-                ? AppColors.brand.withOpacity(0.05)
-                : AppColors.background,
+            color: isWin
+                ? const Color(0xFFD4A017).withOpacity(0.07)
+                : item.unread
+                    ? AppColors.brand.withOpacity(0.05)
+                    : AppColors.background,
             border: const Border(
               bottom: BorderSide(color: AppColors.border),
             ),
@@ -293,7 +326,13 @@ class _NotificationTile extends StatelessWidget {
                     const SizedBox(height: 5),
                     Text(
                       item.actionLabel,
-                      style: t.bodySmall?.copyWith(color: AppColors.text),
+                      style: t.bodySmall?.copyWith(
+                        color: isWin
+                            ? const Color(0xFFD4A017)
+                            : AppColors.text,
+                        fontWeight:
+                            isWin ? FontWeight.w700 : FontWeight.w400,
+                      ),
                     ),
                     if (item.preview != null &&
                         item.preview!.isNotEmpty) ...[
