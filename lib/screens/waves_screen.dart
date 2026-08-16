@@ -125,8 +125,6 @@ class _WavesScreenState extends State<WavesScreen> {
   }
 
   Widget _waveCard(BuildContext context, Jump w) {
-    final t = Theme.of(context).textTheme;
-
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Container(
@@ -335,9 +333,9 @@ class _WavesScreenState extends State<WavesScreen> {
 
   Widget _empty(BuildContext context) {
     return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.18),
         Center(
           child: Column(
             children: [
@@ -350,21 +348,167 @@ class _WavesScreenState extends State<WavesScreen> {
                     .titleMedium
                     ?.copyWith(fontSize: 16),
               ),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  'تُمنح الموجة عند بلوغ رتبة نينجا (١٢٠ نقطة) فما فوق',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const RankBadge(rank: BattleRank.ninja, withLabel: true),
             ],
           ),
         ),
+        const SizedBox(height: 22),
+        _intro(context),
+        const SizedBox(height: 16),
+        _howToCard(context),
+        const SizedBox(height: 16),
+        _whatCanIDoCard(context),
       ],
+    );
+  }
+
+  /// دليل الحصول على موجة
+  Widget _howToCard(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'كيف أحصل على موجة؟',
+              style: t.titleMedium?.copyWith(fontSize: 15),
+            ),
+            const SizedBox(height: 14),
+            _step(context, '١', 'شارك في النزالات ⚔️',
+                'تحدَّ الآخرين أو اقبل تحدياتهم في المواضيع التي تجيدها.'),
+            _step(context, '٢', 'اجمع النقاط',
+                'كل فوز في نزال يمنحك نقاطًا ترفع رتبتك.'),
+            _step(context, '٣', 'ابلغ رتبة نينجا ⚡',
+                'عند وصولك ١٢٠ نقطة تُمنح موجتك الأولى تلقائيًا. '
+                'رتبتا ساموراي والوحش تمنحان موجات أيضًا.'),
+            _step(context, '٤', 'استلم موجتك هنا',
+                'ستظهر في هذه الشاشة جاهزة للاستخدام قبل انتهاء صلاحيتها.',
+                last: true),
+            const SizedBox(height: 14),
+            const Center(
+              child: RankBadge(rank: BattleRank.ninja, withLabel: true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// ماذا أفعل بالموجة
+  Widget _whatCanIDoCard(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.brand.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ماذا أفعل بالموجة؟',
+              style: t.titleMedium?.copyWith(fontSize: 15),
+            ),
+            const SizedBox(height: 12),
+            _useRow(context, Icons.campaign_outlined, 'انشر بها',
+                'منشورك يصل لجمهور واسع خارج دائرة متابعيك.'),
+            _useRow(context, Icons.card_giftcard_outlined, 'أهدِها',
+                'أرسلها لصديق يستفيد منها بدلًا عنك.'),
+            _useRow(context, Icons.storefront_outlined, 'اعرضها للبيع',
+                'اعرضها في السوق واتفق مع المشتري مباشرة.',
+                last: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _step(
+    BuildContext context,
+    String num,
+    String title,
+    String body, {
+    bool last = false,
+  }) {
+    final t = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: last ? 0 : 13),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.brand.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              num,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppColors.brand,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: t.titleMedium?.copyWith(fontSize: 13.5)),
+                const SizedBox(height: 3),
+                Text(body, style: t.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _useRow(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String body, {
+    bool last = false,
+  }) {
+    final t = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: last ? 0 : 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 19, color: AppColors.brand),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: t.titleMedium?.copyWith(fontSize: 13.5)),
+                const SizedBox(height: 3),
+                Text(body, style: t.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
