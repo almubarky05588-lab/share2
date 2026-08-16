@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../models/jump.dart';
 import '../models/post.dart';
 import '../models/user_profile.dart';
+import '../services/battle_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
@@ -16,10 +18,7 @@ import '../widgets/rich_compose_field.dart';
 class ComposeScreen extends StatefulWidget {
   const ComposeScreen({super.key, this.replyTo, this.initialText});
 
-  /// المنشور المردود عليه — إن وُجد
   final Post? replyTo;
-
-  /// نص مبدئي (مثل @معرّف عند المنشن من الملف الشخصي)
   final String? initialText;
 
   @override
@@ -39,7 +38,10 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   UserProfile? _me;
 
-  /// اقتراحات المنشن
+  /// الموجة المتاحة — إن وُجدت
+  Jump? _wave;
+  bool _useWave = false;
+
   List<UserProfile> _suggestions = const [];
   Timer? _debounce;
 
@@ -85,8 +87,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   Future<void> _loadMe() async {
     final me = await SupabaseService.instance.fetchMyProfile();
+    final wave = _isReply
+        ? null
+        : await BattleService.instance.firstAvailableWave();
+
     if (!mounted) return;
-    setState(() => _me = me);
+    setState(() {
+      _me = me;
+      _wave = wave;
+    });
   }
 
   int get _remaining => _maxLength - _controller.text.characters.length;
@@ -148,12 +157,21 @@ class _ComposeScreenState extends State<ComposeScreen> {
         type = r.type;
       }
 
-      await SupabaseService.instance.createPost(
-        _controller.text.trim(),
-        replyTo: widget.replyTo?.id,
-        mediaUrl: url,
-        mediaType: type,
-      );
+      if (_useWave && _wave != null) {
+        await BattleService.instance.publishWithWave(
+          waveId: _wave!.id,
+          body: _controller.text.trim(),
+          mediaUrl: url,
+          mediaType: type,
+        );
+      } else {
+        await SupabaseService.instance.createPost(
+          _controller.text.trim(),
+          replyTo: widget.replyTo?.id,
+          mediaUrl: url,
+          mediaType: type,
+        );
+      }
 
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -185,6 +203,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   _editor(context),
                   if (_suggestions.isNotEmpty) _mentionList(context),
                   if (_media != null) _preview(),
+                  if (_wave != null) _waveToggle(context),
                 ],
               ),
             ),
@@ -215,7 +234,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
           Opacity(
             opacity: _canSend ? 1 : 0.45,
             child: Material(
-              color: AppColors.brand,
+              color: _useWave ? const Color(0xFF2F6BFF) : AppColors.brand,
               borderRadius: BorderRadius.circular(19),
               child: InkWell(
                 borderRadius: BorderRadius.circular(19),
@@ -233,7 +252,11 @@ class _ComposeScreenState extends State<ComposeScreen> {
                           ),
                         )
                       : Text(
-                          _isReply ? 'رد' : 'share',
+                          _isReply
+                              ? 'رد'
+                              : _useWave
+                                  ? '🌊 انشر بموجة'
+                                  : 'share',
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -246,6 +269,85 @@ class _ComposeScreenState extends State<ComposeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// مفتاح استخدام الموجة
+  Widget _waveToggle(BuildContext context) {
+    final w = _wave!;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: InkWell(
+          onTap: () => setState(() => _useWave = !_useWave),
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: _useWave
+                  ? const LinearGradient(
+                      colors: [Color(0xFF5B63E0), Color(0xFF2F6BFF)],
+                    )
+                  : null,
+              color: _useWave ? null : AppColors.border.withOpacity(0.35),
+              border: Border.all(
+                color: _useWave
+                    ? Colors.transparent
+                    : AppColors.brand.withOpacity(0.35),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  '🌊',
+                  style: TextStyle(
+                    fontSize: 22,
+                    color: _useWave ? Colors.white : null,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'انشر بموجة',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: _useWave
+                              ? AppColors.background
+                              : AppColors.text,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'يصل لـ${w.reachLabel} · تنتهي خلال ${w.daysLeft} يومًا',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.6,
+                          color: _useWave
+                              ? Colors.white70
+                              : AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _useWave,
+                  activeColor: Colors.white,
+                  activeTrackColor: Colors.white24,
+                  onChanged: (v) => setState(() => _useWave = v),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -390,7 +492,6 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
-  /// اقتراحات المنشن أثناء الكتابة
   Widget _mentionList(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
