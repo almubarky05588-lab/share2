@@ -37,6 +37,13 @@ jobs:
           channel: stable
           cache: true
 
+      - name: رفع رقم البناء
+        run: |
+          BUILD=$(( 100 + ${{ github.run_number }} ))
+          echo "رقم البناء الجديد: $BUILD"
+          sed -i '' -E "s/^version: (.*)\+.*/version: \1+$BUILD/" pubspec.yaml
+          grep '^version:' pubspec.yaml
+
       - name: جلب الحزم
         run: flutter pub get
 
@@ -47,10 +54,11 @@ jobs:
           }
 
       - name: تجهيز ملفات Flutter لـ iOS
-        continue-on-error: true
         run: |
-          flutter build ios --release --no-codesign || \
-            echo "⚠️ التجهيز التمهيدي انتهى بتحذير — البناء الفعلي يتم في fastlane"
+          flutter build ios --release --no-codesign 2>&1 | tail -60 || {
+            echo "❌ فشل التجهيز — راجع الأسطر أعلاه"
+            exit 1
+          }
 
       - name: تثبيت Ruby و fastlane
         uses: ruby/setup-ruby@v1
