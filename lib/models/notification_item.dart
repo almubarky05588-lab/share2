@@ -52,6 +52,12 @@ class NotificationItem {
       type == NotificationType.battleWon ||
       type == NotificationType.battleLost;
 
+  /// تفاعل قابل للتجميع (إعجاب أو إعادة نشر على منشور)
+  bool get isGroupable =>
+      (type == NotificationType.like ||
+          type == NotificationType.reshare) &&
+      postId != null;
+
   String get actionLabel {
     switch (type) {
       case NotificationType.mention:
@@ -160,4 +166,101 @@ class NotificationItem {
       unread: unread,
     );
   }
+}
+
+/// مجموعة تفاعلات (إعجابات أو إعادات نشر) على منشور واحد
+class NotificationGroup {
+  const NotificationGroup({
+    required this.type,
+    required this.postId,
+    required this.items,
+  });
+
+  final NotificationType type;
+  final String postId;
+
+  /// مرتبة من الأحدث للأقدم
+  final List<NotificationItem> items;
+
+  int get count => items.length;
+
+  NotificationItem get latest => items.first;
+
+  String? get preview => latest.preview;
+
+  String get timeAgo => latest.timeAgo;
+
+  bool get unread => items.any((e) => e.unread);
+
+  /// حتى ٤ صور متراكبة
+  List<NotificationItem> get faces => items.take(4).toList();
+
+  IconData get icon => latest.icon;
+
+  Color get iconColor => latest.iconColor;
+
+  /// «أعجب فلان و١٤ آخرين بمنشورك»
+  String get label {
+    final name = latest.actorName;
+    final others = count - 1;
+    final verb =
+        type == NotificationType.like ? 'أعجب' : 'أعاد النشر';
+
+    if (others == 0) {
+      return type == NotificationType.like
+          ? '$verb $name بمنشورك'
+          : '$name أعاد نشر منشورك';
+    }
+
+    final othersLabel = others == 1
+        ? 'وآخر'
+        : others == 2
+            ? 'وآخران'
+            : 'و$others آخرين';
+
+    return type == NotificationType.like
+        ? '$verb $name $othersLabel بمنشورك'
+        : '$name $othersLabel أعادوا نشر منشورك';
+  }
+}
+
+/// يبني قائمة العرض: تفاعلان فأكثر على نفس المنشور = مجموعة واحدة،
+/// والمنشن والردود والنزالات والمتابعات تبقى مفردة بارزة.
+/// الناتج عناصر من نوعين: NotificationItem أو NotificationGroup.
+List<Object> buildNotificationEntries(List<NotificationItem> items) {
+  final entries = <Object>[];
+  final buckets = <String, List<NotificationItem>>{};
+
+  // تجميع القابل للتجميع حسب (النوع + المنشور)
+  for (final item in items) {
+    if (!item.isGroupable) continue;
+    buckets.putIfAbsent('${item.type.name}_${item.postId}', () => [])
+        .add(item);
+  }
+
+  final placed = <String>{};
+
+  for (final item in items) {
+    if (!item.isGroupable) {
+      entries.add(item);
+      continue;
+    }
+
+    final key = '${item.type.name}_${item.postId}';
+    if (placed.contains(key)) continue;
+    placed.add(key);
+
+    final bucket = buckets[key]!;
+    if (bucket.length == 1) {
+      entries.add(item);
+    } else {
+      entries.add(NotificationGroup(
+        type: item.type,
+        postId: item.postId!,
+        items: bucket,
+      ));
+    }
+  }
+
+  return entries;
 }
