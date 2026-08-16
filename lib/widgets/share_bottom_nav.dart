@@ -2,25 +2,27 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// شريط التنقل السفلي — أربعة عناصر مع شارة إشعارات على المنشن
+/// شريط التنقل السفلي — خمسة عناصر
 class ShareBottomNav extends StatelessWidget {
   const ShareBottomNav({
     super.key,
     required this.currentIndex,
     this.onTap,
     this.mentionsBadge = 0,
+    this.battlesBadge = 0,
   });
 
-  /// 0 الرئيسية · 1 استكشاف · 2 المنشن · 3 الرسائل
+  /// 0 الرئيسية · 1 استكشاف · 2 النزالات · 3 المنشن · 4 الرسائل
   final int currentIndex;
   final ValueChanged<int>? onTap;
 
-  /// عدد الإشعارات غير المقروءة
   final int mentionsBadge;
+  final int battlesBadge;
 
   static const _items = <({IconData icon, String label})>[
     (icon: Icons.home_outlined, label: 'الرئيسية'),
     (icon: Icons.search, label: 'استكشاف'),
+    (icon: Icons.bolt, label: 'النزالات'),
     (icon: Icons.alternate_email, label: 'المنشن'),
     (icon: Icons.mail_outline, label: 'الرسائل'),
   ];
@@ -32,7 +34,7 @@ class ShareBottomNav extends StatelessWidget {
         color: AppColors.background,
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
       child: SafeArea(
         top: false,
         child: Row(
@@ -40,7 +42,12 @@ class ShareBottomNav extends StatelessWidget {
             final item = _items[i];
             final active = i == currentIndex;
             final color = active ? AppColors.brand : AppColors.textMuted;
-            final badge = i == 2 ? mentionsBadge : 0;
+
+            final badge = i == 2
+                ? battlesBadge
+                : i == 3
+                    ? mentionsBadge
+                    : 0;
 
             return Expanded(
               child: InkWell(
@@ -93,11 +100,14 @@ class ShareBottomNav extends StatelessWidget {
                       const SizedBox(height: 4),
                       Text(
                         item.label,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: color,
-                              fontWeight:
-                                  active ? FontWeight.w700 : FontWeight.w400,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  fontSize: 10.5,
+                                  color: color,
+                                  fontWeight: active
+                                      ? FontWeight.w700
+                                      : FontWeight.w400,
+                                ),
                       ),
                     ],
                   ),
