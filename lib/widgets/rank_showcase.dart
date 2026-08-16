@@ -1,9 +1,8 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:video_player/video_player.dart';
 
 import '../models/battle.dart';
 
@@ -35,8 +34,8 @@ class RankShowcase extends StatefulWidget {
     await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierColor: Colors.black.withOpacity(0.94),
-      transitionDuration: const Duration(milliseconds: 220),
+      barrierColor: Colors.black,
+      transitionDuration: const Duration(milliseconds: 250),
       pageBuilder: (_, __, ___) => RankShowcase(
         rank: rank,
         name: name,
@@ -52,27 +51,24 @@ class RankShowcase extends StatefulWidget {
 }
 
 class _RankShowcaseState extends State<RankShowcase>
-    with TickerProviderStateMixin {
-  static const _shout =
-      'assets/jnilsons-kung-fu-fu-464591.mp3';
-  static const _swing =
-      'assets/freesound_community-sword-swings-14592.mp3';
+    with SingleTickerProviderStateMixin {
+  /// نافذة العرض من الفيديو
+  static const _start = Duration(milliseconds: 2400);
+  static const _end = Duration(milliseconds: 6800);
 
-  late final AnimationController _c = AnimationController(
+  /// نسبة ما يُقتطع من أسفل الفيديو (العلامة المائية)
+  static const _cropBottom = 0.14;
+
+  VideoPlayerController? _video;
+  bool _ready = false;
+  bool _finished = false;
+
+  late final AnimationController _fade = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2400),
+    duration: const Duration(milliseconds: 700),
   );
 
-  final _player = AudioPlayer();
-  final _player2 = AudioPlayer();
-
-  /// الإطار الحالي 1..4
-  int _frame = 1;
-  bool _shouted = false;
-  bool _swung = false;
-  bool _done = false;
-
-  bool get _hasFrames =>
+  bool get _hasVideo =>
       widget.rank == BattleRank.ninja ||
       widget.rank == BattleRank.samurai ||
       widget.rank == BattleRank.beast;
@@ -80,56 +76,59 @@ class _RankShowcaseState extends State<RankShowcase>
   @override
   void initState() {
     super.initState();
-    _run();
-  }
+    HapticFeedback.mediumImpact();
 
-  Future<void> _run() async {
-    _c.addListener(_onTick);
-    await _c.forward();
-    if (mounted) setState(() => _done = true);
-  }
-
-  void _onTick() {
-    final v = _c.value;
-
-    // تسلسل الإطارات
-    final f = v < 0.18
-        ? 1
-        : v < 0.42
-            ? 2
-            : v < 0.66
-                ? 3
-                : 4;
-
-    if (f != _frame) setState(() => _frame = f);
-
-    // الصرخة عند القفزة
-    if (!_shouted && v > 0.18 && _hasFrames) {
-      _shouted = true;
-      HapticFeedback.heavyImpact();
-      _play(_player, _shout);
-    }
-
-    // صفير السيف
-    if (!_swung && v > 0.44 && _hasFrames) {
-      _swung = true;
-      HapticFeedback.mediumImpact();
-      _play(_player2, _swing);
+    if (_hasVideo) {
+      _initVideo();
+    } else {
+      _ready = true;
+      _finished = true;
+      _fade.forward();
     }
   }
 
-  Future<void> _play(AudioPlayer p, String asset) async {
+  Future<void> _initVideo() async {
+    final c = VideoPlayerController.asset('assets/ninja.MP4');
+    _video = c;
+
     try {
-      await p.setAsset(asset);
-      await p.play();
-    } catch (_) {}
+      await c.initialize();
+      await c.seekTo(_start);
+      await c.setVolume(1);
+      await c.play();
+
+      c.addListener(_watch);
+
+      if (!mounted) return;
+      setState(() => _ready = true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _ready = true;
+        _finished = true;
+      });
+      _fade.forward();
+    }
+  }
+
+  void _watch() {
+    final c = _video;
+    if (c == null || !c.value.isInitialized) return;
+
+    if (c.value.position >= _end && !_finished) {
+      _finished = true;
+      c.pause();
+      HapticFeedback.lightImpact();
+      _fade.forward();
+      if (mounted) setState(() {});
+    }
   }
 
   @override
   void dispose() {
-    _c.dispose();
-    _player.dispose();
-    _player2.dispose();
+    _video?.removeListener(_watch);
+    _video?.dispose();
+    _fade.dispose();
     super.dispose();
   }
 
@@ -138,136 +137,116 @@ class _RankShowcaseState extends State<RankShowcase>
     final rank = widget.rank;
 
     return Material(
-      color: Colors.transparent,
+      color: Colors.black,
       child: GestureDetector(
         onTap: () => Navigator.of(context).maybePop(),
-        child: AnimatedBuilder(
-          animation: _c,
-          builder: (context, _) {
-            final v = _c.value;
-
-            return Stack(
-              alignment: Alignment.center,
-              children: [
-                _glow(rank, v),
-                if (_hasFrames) _smoke(v),
-                if (_hasFrames) _warrior(v) else _badgeOnly(rank, v),
-                _info(context, rank, v),
-                if (_done) _hint(context),
-              ],
-            );
-          },
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            _glow(rank),
+            if (_hasVideo && _ready && _video != null)
+              _videoLayer()
+            else if (!_hasVideo)
+              _badgeOnly(rank),
+            if (!_ready)
+              const CircularProgressIndicator(color: Colors.white24),
+            _info(context, rank),
+          ],
         ),
       ),
     );
   }
 
-  /// هالة لون الرتبة
-  Widget _glow(BattleRank rank, double v) {
-    final pulse = 0.5 + math.sin(v * math.pi * 3) * 0.2;
+  /// هالة لون الرتبة خلف المشهد
+  Widget _glow(BattleRank rank) {
+    return Container(
+      width: 460,
+      height: 460,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            rank.color.withOpacity(0.30),
+            rank.color.withOpacity(0.06),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.5, 1.0],
+        ),
+      ),
+    );
+  }
 
-    return Opacity(
-      opacity: (v * 2).clamp(0.0, 1.0) * 0.55,
-      child: Container(
-        width: 420,
-        height: 420,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [
-              rank.color.withOpacity(pulse),
-              rank.color.withOpacity(0.12),
-              Colors.transparent,
-            ],
-            stops: const [0.0, 0.45, 1.0],
+  /// الفيديو — مقصوص من الأسفل لإخفاء العلامة المائية
+  Widget _videoLayer() {
+    final c = _video!;
+    final size = MediaQuery.of(context).size;
+
+    return SizedBox(
+      width: size.width,
+      height: size.height * 0.62,
+      child: ClipRect(
+        child: Align(
+          alignment: Alignment.topCenter,
+          heightFactor: 1 - _cropBottom,
+          child: AspectRatio(
+            aspectRatio: c.value.aspectRatio,
+            child: VideoPlayer(c),
           ),
         ),
       ),
     );
   }
 
-  /// دخان يتصاعد
-  Widget _smoke(double v) {
-    return IgnorePointer(
-      child: CustomPaint(
-        size: MediaQuery.of(context).size,
-        painter: _SmokePainter(v, widget.rank.color),
-      ),
-    );
-  }
-
-  /// المحارب — تسلسل الإطارات
-  Widget _warrior(double v) {
-    // دخول من اليمين ثم استقرار
-    final enter = Curves.easeOutCubic.transform((v * 4).clamp(0.0, 1.0));
-    final dx = (1 - enter) * 220;
-
-    // ارتجاج لحظة الضربة
-    final hit = (v > 0.42 && v < 0.52)
-        ? math.sin((v - 0.42) * math.pi * 20) * 6
-        : 0.0;
-
-    // اختفاء تدريجي في النهاية
-    final fade = v > 0.9 ? (1 - (v - 0.9) / 0.1).clamp(0.0, 1.0) : 1.0;
-
-    return Transform.translate(
-      offset: Offset(dx + hit, -30),
-      child: Opacity(
-        opacity: enter * fade,
-        child: Image.asset(
-          'assets/ninja_$_frame.png',
-          height: MediaQuery.of(context).size.height * 0.46,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+  Widget _badgeOnly(BattleRank rank) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 800),
+      curve: Curves.elasticOut,
+      builder: (_, v, __) => Transform.scale(
+        scale: 0.5 + v * 0.5,
+        child: Transform.rotate(
+          angle: (1 - v) * math.pi / 5,
+          child: Icon(rank.icon, size: 130, color: rank.color),
         ),
       ),
     );
   }
 
-  /// للرتب التي لا صور لها — شارة كبيرة
-  Widget _badgeOnly(BattleRank rank, double v) {
-    final scale = Curves.elasticOut.transform(v.clamp(0.0, 1.0));
-
-    return Transform.scale(
-      scale: 0.5 + scale * 0.5,
-      child: Transform.rotate(
-        angle: (1 - scale) * math.pi / 4,
-        child: Icon(rank.icon, size: 130, color: rank.color),
-      ),
-    );
-  }
-
-  /// الاسم والرتبة والسجل
-  Widget _info(BuildContext context, BattleRank rank, double v) {
-    final show = (v - 0.55).clamp(0.0, 1.0) / 0.45;
-
+  /// الاسم والرتبة والسجل — يظهر بعد المشهد
+  Widget _info(BuildContext context, BattleRank rank) {
     return Positioned(
-      bottom: MediaQuery.of(context).size.height * 0.14,
-      child: Opacity(
-        opacity: show.clamp(0.0, 1.0),
-        child: Transform.translate(
-          offset: Offset(0, (1 - show) * 30),
+      bottom: MediaQuery.of(context).size.height * 0.11,
+      child: FadeTransition(
+        opacity: _fade,
+        child: SlideTransition(
+          position: Tween(
+            begin: const Offset(0, 0.35),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: _fade,
+            curve: Curves.easeOutCubic,
+          )),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 22, vertical: 9),
+                    horizontal: 24, vertical: 10),
                 decoration: BoxDecoration(
-                  color: rank.color.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: rank.color, width: 1.6),
+                  color: rank.color.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(26),
+                  border: Border.all(color: rank.color, width: 1.8),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   textDirection: TextDirection.rtl,
                   children: [
-                    Icon(rank.icon, size: 22, color: rank.color),
-                    const SizedBox(width: 9),
+                    Icon(rank.icon, size: 24, color: rank.color),
+                    const SizedBox(width: 10),
                     Text(
                       rank.label,
                       style: TextStyle(
-                        fontSize: 22,
+                        fontSize: 24,
                         fontWeight: FontWeight.w900,
                         height: 1.5,
                         color: rank.color,
@@ -276,16 +255,16 @@ class _RankShowcaseState extends State<RankShowcase>
                   ],
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               Text(
                 widget.name,
                 style: const TextStyle(
-                  fontSize: 19,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Directionality(
                 textDirection: TextDirection.rtl,
                 child: Row(
@@ -299,6 +278,14 @@ class _RankShowcaseState extends State<RankShowcase>
                   ],
                 ),
               ),
+              const SizedBox(height: 26),
+              Text(
+                'اضغط للإغلاق',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withOpacity(0.3),
+                ),
+              ),
             ],
           ),
         ),
@@ -308,14 +295,14 @@ class _RankShowcaseState extends State<RankShowcase>
 
   Widget _stat(String value, String label) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 11),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             value,
             style: const TextStyle(
-              fontSize: 16,
+              fontSize: 17,
               fontWeight: FontWeight.w800,
               color: Colors.white,
             ),
@@ -342,56 +329,4 @@ class _RankShowcaseState extends State<RankShowcase>
           shape: BoxShape.circle,
         ),
       );
-
-  Widget _hint(BuildContext context) {
-    return Positioned(
-      bottom: 44,
-      child: Text(
-        'اضغط للإغلاق',
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.white.withOpacity(0.35),
-        ),
-      ),
-    );
-  }
-}
-
-/// دخان متصاعد
-class _SmokePainter extends CustomPainter {
-  _SmokePainter(this.t, this.color);
-
-  final double t;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final base = size.height * 0.72;
-
-    final rnd = math.Random(7);
-
-    for (var i = 0; i < 14; i++) {
-      final seed = rnd.nextDouble();
-      final phase = (t + seed) % 1.0;
-
-      final x = cx + (seed - 0.5) * size.width * 0.75;
-      final y = base - phase * size.height * 0.5;
-      final r = 20 + phase * 70 + seed * 25;
-
-      final opacity = (1 - phase) * 0.16;
-      if (opacity <= 0) continue;
-
-      canvas.drawCircle(
-        Offset(x, y),
-        r,
-        Paint()
-          ..color = color.withOpacity(opacity)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 26),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SmokePainter old) => old.t != t;
 }
