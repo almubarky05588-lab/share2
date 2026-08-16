@@ -47,16 +47,11 @@ class Spoil {
 
   final String id;
   final String ownerId;
-
-  /// من خسر — مصدر الجمهور
   final String loserId;
   final String loserName;
   final String loserHandle;
   final String? loserAvatar;
-
-  /// عدد المشاهدات
   final int reach;
-
   final SpoilStatus status;
   final DateTime expiresAt;
   final String? battleId;
@@ -119,7 +114,7 @@ class Spoil {
   }
 }
 
-/// حجّة في النزال — رد أحد الطرفين
+/// حجّة في النزال — نص · مصادر · صور · فيديو
 class BattleArgument {
   const BattleArgument({
     required this.id,
@@ -128,8 +123,9 @@ class BattleArgument {
     required this.side,
     required this.body,
     required this.timeAgo,
-    this.sourceUrl,
-    this.mediaUrl,
+    this.sources = const [],
+    this.images = const [],
+    this.videoUrl,
   });
 
   final String id;
@@ -142,37 +138,56 @@ class BattleArgument {
   final String body;
   final String timeAgo;
 
-  /// رابط مصدر
-  final String? sourceUrl;
-  final String? mediaUrl;
+  /// حتى ٣ روابط مصادر
+  final List<String> sources;
 
-  bool get hasSource => sourceUrl != null && sourceUrl!.trim().isNotEmpty;
-  bool get hasMedia => mediaUrl != null && mediaUrl!.trim().isNotEmpty;
+  /// حتى ٤ صور
+  final List<String> images;
 
-  /// اسم النطاق للعرض
-  String get sourceLabel {
-    final u = sourceUrl;
-    if (u == null) return '';
+  /// فيديو واحد
+  final String? videoUrl;
+
+  bool get hasSources => sources.isNotEmpty;
+  bool get hasImages => images.isNotEmpty;
+  bool get hasVideo => videoUrl != null && videoUrl!.trim().isNotEmpty;
+  bool get hasMedia => hasImages || hasVideo;
+
+  /// اسم نطاق رابط
+  static String hostOf(String url) {
     try {
-      final host = Uri.parse(u).host;
-      return host.replaceFirst('www.', '');
+      final h = Uri.parse(url).host;
+      return h.isEmpty ? url : h.replaceFirst('www.', '');
     } catch (_) {
-      return u;
+      return url;
     }
   }
 
   factory BattleArgument.fromRow(
     Map<String, dynamic> row, {
     required String Function(String?) formatTime,
-  }) =>
-      BattleArgument(
-        id: row['id'].toString(),
-        battleId: row['battle_id'].toString(),
-        authorId: row['author_id'].toString(),
-        side: row['side'] as String? ?? 'challenger',
-        body: row['body'] as String? ?? '',
-        sourceUrl: row['source_url'] as String?,
-        mediaUrl: row['media_url'] as String?,
-        timeAgo: formatTime(row['created_at'] as String?),
-      );
+  }) {
+    List<String> list(dynamic v) {
+      if (v is List) return v.map((e) => e.toString()).toList();
+      return const [];
+    }
+
+    // دعم الحقل القديم source_url
+    final srcs = list(row['sources']);
+    final legacy = row['source_url'] as String?;
+    if (srcs.isEmpty && legacy != null && legacy.trim().isNotEmpty) {
+      srcs.add(legacy);
+    }
+
+    return BattleArgument(
+      id: row['id'].toString(),
+      battleId: row['battle_id'].toString(),
+      authorId: row['author_id'].toString(),
+      side: row['side'] as String? ?? 'challenger',
+      body: row['body'] as String? ?? '',
+      sources: srcs,
+      images: list(row['images']),
+      videoUrl: row['video_url'] as String?,
+      timeAgo: formatTime(row['created_at'] as String?),
+    );
+  }
 }
