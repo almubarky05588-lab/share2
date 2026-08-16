@@ -2,7 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
+
+import 'sound_fx.dart';
 
 /// مؤثر التحام السيفين — يُعرض عند بدء النزال
 class ClashOverlay extends StatefulWidget {
@@ -36,20 +37,12 @@ class _ClashOverlayState extends State<ClashOverlay>
     duration: const Duration(milliseconds: 420),
   );
 
-  final _player = AudioPlayer();
   bool _clashed = false;
 
   @override
   void initState() {
     super.initState();
-    _prepare();
     _run();
-  }
-
-  Future<void> _prepare() async {
-    try {
-      await _player.setAsset('assets/clash.mp3');
-    } catch (_) {}
   }
 
   Future<void> _run() async {
@@ -58,7 +51,7 @@ class _ClashOverlayState extends State<ClashOverlay>
         _clashed = true;
         HapticFeedback.heavyImpact();
         _shake.forward(from: 0);
-        _player.play().catchError((_) {});
+        SoundFx.play('assets/clash.mp3');
       }
     });
 
@@ -74,7 +67,6 @@ class _ClashOverlayState extends State<ClashOverlay>
   void dispose() {
     _slide.dispose();
     _shake.dispose();
-    _player.dispose();
     super.dispose();
   }
 
