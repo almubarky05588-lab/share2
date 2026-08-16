@@ -9,6 +9,12 @@ import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
 import 'avatar_circle.dart';
 
+/// ذاكرة أصوات الجلسة — تمنع عودة أزرار التصويت بعد التصويت
+class BattleVoteMemory {
+  BattleVoteMemory._();
+  static final Map<String, String> votes = {};
+}
+
 /// بطاقة نزال — عمودية مع خط ملوّن لكل طرف
 class BattleCard extends StatefulWidget {
   const BattleCard({
@@ -30,9 +36,19 @@ class _BattleCardState extends State<BattleCard> {
   static const _red = Color(0xFFE0455C);
   static const _blue = Color(0xFF2F6BFF);
 
-  late Battle _b = widget.battle;
+  late Battle _b = _withMemory(widget.battle);
   Timer? _tick;
   bool _busy = false;
+
+  /// يدمج صوت الجلسة إن لم يأتِ من الخادم
+  static Battle _withMemory(Battle b) {
+    if (b.myVote != null) {
+      BattleVoteMemory.votes[b.id] = b.myVote!;
+      return b;
+    }
+    final saved = BattleVoteMemory.votes[b.id];
+    return saved == null ? b : b.copyWith(myVote: saved);
+  }
 
   @override
   void initState() {
@@ -48,7 +64,10 @@ class _BattleCardState extends State<BattleCard> {
   @override
   void didUpdateWidget(covariant BattleCard old) {
     super.didUpdateWidget(old);
-    if (old.battle.id != widget.battle.id) _b = widget.battle;
+    if (old.battle.id != widget.battle.id ||
+        old.battle.totalVotes != widget.battle.totalVotes) {
+      _b = _withMemory(widget.battle);
+    }
   }
 
   @override
@@ -69,6 +88,8 @@ class _BattleCardState extends State<BattleCard> {
 
     try {
       await BattleService.instance.vote(_b.id, side);
+      BattleVoteMemory.votes[_b.id] = side;
+
       if (!mounted) return;
 
       setState(() {
@@ -101,10 +122,10 @@ class _BattleCardState extends State<BattleCard> {
 
       widget.onChanged?.call();
     } catch (_) {
+      // صوّت مسبقًا — نعلّمها محليًا ونعرض النتيجة
+      BattleVoteMemory.votes[_b.id] = side;
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('تعذّر التصويت')),
-      );
+      setState(() => _b = _b.copyWith(myVote: side));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -262,6 +283,8 @@ class _BattleCardState extends State<BattleCard> {
                 if (won)
                   const Icon(Icons.emoji_events,
                       size: 20, color: Color(0xFFD4A017)),
+                if (mine && !_b.isFinished)
+                  Icon(Icons.check_circle, size: 18, color: color),
               ],
             ),
             const SizedBox(height: 8),
