@@ -5,9 +5,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/battle.dart';
 import '../models/jump.dart';
+import '../models/spoil.dart';
 import 'supabase_service.dart';
 
-/// كل ما يخصّ النزال والموجة والسوق والتحكيم
+/// النزال · الغنائم · الموجة · السوق · التحكيم
 class BattleService {
   BattleService._();
   static final instance = BattleService._();
@@ -62,19 +63,18 @@ class BattleService {
     } catch (_) {}
   }
 
-  Future<Map<String, String>> _myVotes(List<String> battleIds) async {
+  Future<Map<String, String>> _myVotes(List<String> ids) async {
     final uid = _uid;
-    if (uid == null || battleIds.isEmpty) return {};
+    if (uid == null || ids.isEmpty) return {};
 
     final rows = await _db
         .from('battle_votes')
         .select('battle_id, side')
         .eq('user_id', uid)
-        .inFilter('battle_id', battleIds);
+        .inFilter('battle_id', ids);
 
     return {
-      for (final r in rows)
-        r['battle_id'].toString(): r['side'] as String,
+      for (final r in rows) r['battle_id'].toString(): r['side'] as String,
     };
   }
 
@@ -185,6 +185,39 @@ class BattleService {
     });
   }
 
+  /// تغيير الصوت — مرة واحدة
+  Future<void> changeVote(String battleId, String newSide) async {
+    await _db.rpc('change_vote', params: {
+      'b_id': battleId,
+      'new_side': newSide,
+    });
+  }
+
+  /// عدد المصوّتين الفعلي
+  Future<int> votersCount(String battleId) async {
+    try {
+      return await _db
+          .from('battle_votes')
+          .count()
+          .eq('battle_id', battleId);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// قوة ضربتي
+  Future<int> myStrikePower() async {
+    final me = await SupabaseService.instance.fetchMyProfile();
+    final p = me?.battlePoints ?? 0;
+
+    if (p >= 600) return 12;
+    if (p >= 300) return 8;
+    if (p >= 120) return 5;
+    if (p >= 45) return 3;
+    if (p >= 15) return 2;
+    return 1;
+  }
+
   RealtimeChannel watchVotes(void Function() onChange) {
     return _db
         .channel('public:battle_votes')
@@ -219,6 +252,125 @@ class BattleService {
     }
   }
 
+  // ── الحجج والردود ────────────────────────────────────────
+
+  Future<List<BattleArgument>> fetchArguments(String battleId) async {
+    final rows = await _db
+        .from('battle_arguments')
+        .select('*')
+        .eq('battle_id', battleId)
+        .order('created_at', ascending: true);
+
+    return rows
+        .map<BattleArgument>((r) => BattleArgument.fromRow(
+              r,
+              formatTime: SupabaseService.formatTimeAgo,
+            ))
+        .toList();
+  }
+
+  /// عدد ردودي في نزال
+  Future<int> myArgumentsCount(String battleId) async {
+    final uid = _uid;
+    if (uid == null) return 0;
+
+    try {
+      return await _db
+          .from('battle_arguments')
+          .count()
+          .eq('battle_id', battleId)
+          .eq('author_id', uid);
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> addArgument({
+    required String battleId,
+    required String side,
+    required String body,
+    String? sourceUrl,
+    String? mediaUrl,
+  }) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    await _db.from('battle_arguments').insert({
+      'battle_id': battleId,
+      'author_id': uid,
+      'side': side,
+      'body': body,
+      'source_url': sourceUrl,
+      'media_url': mediaUrl,
+    });
+  }
+
+  RealtimeChannel watchArguments(void Function() onChange) {
+    return _db
+        .channel('public:battle_arguments')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'battle_arguments',
+          callback: (_) => onChange(),
+        )
+        .subscribe();
+  }
+
+  // ── الغنائم ──────────────────────────────────────────────
+
+  Future<List<Spoil>> fetchMySpoils() async {
+    final uid = _uid;
+    if (uid == null) return [];
+
+    final rows = await _db
+        .from('spoils')
+        .select('''
+          *,
+          loser:profiles!spoils_loser_id_fkey(id, handle, name, avatar_url)
+        ''')
+        .eq('owner_id', uid)
+        .order('created_at', ascending: false);
+
+    return rows.map<Spoil>((r) => Spoil.fromRow(r)).toList();
+  }
+
+  /// الغنائم المتاحة للنشر
+  Future<List<Spoil>> availableSpoils() async {
+    final uid = _uid;
+    if (uid == null) return [];
+
+    final rows = await _db
+        .from('spoils')
+        .select('''
+          *,
+          loser:profiles!spoils_loser_id_fkey(id, handle, name, avatar_url)
+        ''')
+        .eq('owner_id', uid)
+        .eq('status', 'available')
+        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+        .order('expires_at', ascending: true);
+
+    return rows.map<Spoil>((r) => Spoil.fromRow(r)).toList();
+  }
+
+  /// نشر منشور بغنائم — حتى ٣
+  Future<String> publishWithSpoils({
+    required List<String> spoilIds,
+    required String body,
+    String? mediaUrl,
+    String? mediaType,
+  }) async {
+    final id = await _db.rpc('publish_with_spoils', params: {
+      'spoil_ids': spoilIds,
+      'post_body': body,
+      'media_url': mediaUrl,
+      'media_type': mediaType,
+    });
+
+    return id.toString();
+  }
+
   // ── الموجة ───────────────────────────────────────────────
 
   Future<List<Jump>> fetchMyJumps() async {
@@ -234,7 +386,6 @@ class BattleService {
     return rows.map<Jump>((r) => Jump.fromRow(r)).toList();
   }
 
-  /// أول موجة متاحة — للنشر
   Future<Jump?> firstAvailableWave() async {
     final uid = _uid;
     if (uid == null) return null;
@@ -252,7 +403,6 @@ class BattleService {
     return row == null ? null : Jump.fromRow(row);
   }
 
-  /// نشر منشور بموجة
   Future<String> publishWithWave({
     required String waveId,
     required String body,
@@ -267,15 +417,6 @@ class BattleService {
     });
 
     return id.toString();
-  }
-
-  Future<void> useJump(String jumpId, String postId) async {
-    await _db.from('jumps').update({
-      'post_id': postId,
-      'status': 'used',
-      'used_at': DateTime.now().toUtc().toIso8601String(),
-      'review_status': 'pending',
-    }).eq('id', jumpId);
   }
 
   Future<void> giftJump(String jumpId, String toUserId) async {
