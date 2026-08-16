@@ -83,6 +83,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _load();
   }
 
+  /// منشن سريع — يفتح شاشة نشر بمعرّفه جاهزًا
+  Future<void> _mention() async {
+    final p = _profile;
+    if (p == null) return;
+
+    final done = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ComposeScreen(initialText: '@${p.handle} '),
+      ),
+    );
+
+    if (done == true) _snack('تم النشر');
+  }
+
   Future<void> _openChat() async {
     final p = _profile;
     if (p == null || _busy) return;
@@ -173,6 +188,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {
       _snack('تعذّر تنفيذ العملية');
     }
+  }
+
+  /// قائمة خيارات المستخدم الآخر
+  void _openMenu() {
+    final p = _profile;
+    if (p == null) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            _menuItem(
+              ctx,
+              icon: Icons.alternate_email,
+              label: 'منشن ${p.name}',
+              onTap: _mention,
+            ),
+            _menuItem(
+              ctx,
+              icon: p.isBlocked ? Icons.lock_open : Icons.block,
+              label: p.isBlocked ? 'إلغاء الحظر' : 'حظر ${p.name}',
+              color: AppColors.like,
+              onTap: _toggleBlock,
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _menuItem(
+    BuildContext ctx, {
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color color = AppColors.text,
+  }) {
+    return InkWell(
+      onTap: () {
+        Navigator.of(ctx).pop();
+        onTap();
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
+        child: Row(
+          textDirection: TextDirection.rtl,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontSize: 15, color: color),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _openSettings() async {
@@ -405,8 +497,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     )
                   else
                     _circleButton(
-                      icon: p.isBlocked ? Icons.person_off : Icons.more_horiz,
-                      onTap: _toggleBlock,
+                      icon: Icons.more_horiz,
+                      onTap: _openMenu,
                     ),
                 ],
               ),
@@ -569,12 +661,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: _toggleFollow,
               ),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 8),
             Expanded(
               child: _outlinedButton(context, 'رسالة', onTap: _openChat),
             ),
+            const SizedBox(width: 8),
+            _iconButton(icon: Icons.alternate_email, onTap: _mention),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _iconButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: AppColors.background,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Container(
+          width: 46,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Icon(icon, size: 19, color: AppColors.text),
+        ),
       ),
     );
   }
