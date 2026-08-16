@@ -15,13 +15,15 @@ jobs:
       - name: سحب المستودع
         uses: actions/checkout@v4
 
-      - name: تثبيت Pillow
-        run: pip install --quiet Pillow
+      - name: تثبيت المكتبات
+        run: pip install --quiet Pillow numpy
 
       - name: تفريغ الخلفية
         run: |
           python - <<'PY'
           from PIL import Image
+          from collections import deque
+          import numpy as np
           import os
 
           SRC = [
@@ -31,43 +33,80 @@ jobs:
             'assets/ninja4.png.JPG',
           ]
 
+          # مدى التسامح مع اختلاف اللون عن الخلفية
+          TOL = 46
+
           for i, path in enumerate(SRC, start=1):
               if not os.path.exists(path):
                   print(f'مفقود: {path}')
                   continue
 
-              img = Image.open(path).convert('RGBA')
-              w, h = img.size
-              px = img.load()
+              img = Image.open(path).convert('RGB')
+              a = np.array(img).astype(np.int16)
+              h, w, _ = a.shape
 
-              # إزالة الأبيض والرمادي الفاتح جدًا
+              # لون الخلفية = متوسط أركان الصورة
+              corners = np.array([
+                  a[0, 0], a[0, w - 1], a[h - 1, 0], a[h - 1, w - 1]
+              ])
+              bg = corners.mean(axis=0)
+
+              # الفرق عن لون الخلفية
+              diff = np.abs(a - bg).sum(axis=2)
+              similar = diff < TOL
+
+              # انتشار من الحواف — يزيل الخلفية المتصلة فقط
+              visited = np.zeros((h, w), dtype=bool)
+              q = deque()
+
+              for x in range(w):
+                  for y in (0, h - 1):
+                      if similar[y, x] and not visited[y, x]:
+                          visited[y, x] = True
+                          q.append((y, x))
+
               for y in range(h):
-                  for x in range(w):
-                      r, g, b, a = px[x, y]
-                      if r > 238 and g > 238 and b > 238:
-                          px[x, y] = (r, g, b, 0)
-                      elif r > 218 and g > 218 and b > 218:
-                          # حواف ناعمة
-                          fade = int((255 - min(r, g, b)) * 6)
-                          px[x, y] = (r, g, b, min(fade, 255))
+                  for x in (0, w - 1):
+                      if similar[y, x] and not visited[y, x]:
+                          visited[y, x] = True
+                          q.append((y, x))
 
-              # قصّ الفراغ الزائد
-              box = img.getbbox()
+              while q:
+                  y, x = q.popleft()
+                  for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                      ny, nx = y + dy, x + dx
+                      if 0 <= ny < h and 0 <= nx < w:
+                          if similar[ny, nx] and not visited[ny, nx]:
+                              visited[ny, nx] = True
+                              q.append((ny, nx))
+
+              # قناة الشفافية
+              alpha = np.where(visited, 0, 255).astype(np.uint8)
+
+              out = np.dstack([a.astype(np.uint8), alpha])
+              res = Image.fromarray(out, 'RGBA')
+
+              # تنعيم الحواف
+              from PIL import ImageFilter
+              ch = res.split()
+              soft = ch[3].filter(ImageFilter.GaussianBlur(0.8))
+              res.putalpha(soft)
+
+              box = res.getbbox()
               if box:
-                  img = img.crop(box)
+                  res = res.crop(box)
 
-              # تصغير للعرض على الجوال
               maxw = 700
-              if img.width > maxw:
-                  ratio = maxw / img.width
-                  img = img.resize(
-                      (maxw, int(img.height * ratio)),
+              if res.width > maxw:
+                  ratio = maxw / res.width
+                  res = res.resize(
+                      (maxw, int(res.height * ratio)),
                       Image.LANCZOS,
                   )
 
-              out = f'assets/ninja_{i}.png'
-              img.save(out, 'PNG', optimize=True)
-              print(f'{out} — {img.size}')
+              dst = f'assets/ninja_{i}.png'
+              res.save(dst, 'PNG', optimize=True)
+              print(f'{dst} — {res.size} — خلفية {bg.astype(int)}')
           PY
 
       - name: حفظ الصور
@@ -75,5 +114,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A assets/ninja_*.png
-          git diff --staged --quiet || git commit -m "تفريغ خلفية صور النينجا"
+          git diff --staged --quiet || git commit -m "تفريغ خلفية النينجا — انتشار من الحواف"
           git push
