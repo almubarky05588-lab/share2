@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
 import '../widgets/battle_card.dart';
+import '../widgets/clash_overlay.dart';
 import '../widgets/rank_badge.dart';
 import 'profile_screen.dart';
 
@@ -20,10 +21,12 @@ class BattlesScreen extends StatefulWidget {
 }
 
 class _BattlesScreenState extends State<BattlesScreen> {
-  int _tab = 0; // 0 الأقرب انتهاءً · 1 الأكثر إثارة · 2 تحدياتي
+  /// 0 الأقرب · 1 الأكثر إثارة · 2 نزالاتي · 3 تحدياتي
+  int _tab = 0;
 
   bool _loading = true;
   List<Battle> _battles = const [];
+  List<Battle> _mine = const [];
   List<Battle> _pending = const [];
   int _points = 0;
 
@@ -44,7 +47,7 @@ class _BattlesScreenState extends State<BattlesScreen> {
   }
 
   Future<void> _refreshQuiet() async {
-    if (!mounted || _tab == 2) return;
+    if (!mounted || _tab > 1) return;
     final list = _tab == 0
         ? await BattleService.instance.fetchActive()
         : await BattleService.instance.fetchHot();
@@ -56,20 +59,29 @@ class _BattlesScreenState extends State<BattlesScreen> {
     setState(() => _loading = true);
 
     try {
+      final service = BattleService.instance;
       final me = await SupabaseService.instance.fetchMyProfile();
-      final pending = await BattleService.instance.fetchPending();
+      final uid = SupabaseService.instance.currentUserId;
 
-      final list = _tab == 0
-          ? await BattleService.instance.fetchActive()
-          : _tab == 1
-              ? await BattleService.instance.fetchHot()
-              : <Battle>[];
+      final pending = await service.fetchPending();
+
+      List<Battle> list = const [];
+      List<Battle> mine = const [];
+
+      if (_tab == 0) {
+        list = await service.fetchActive();
+      } else if (_tab == 1) {
+        list = await service.fetchHot();
+      } else if (_tab == 2 && uid != null) {
+        mine = await service.fetchUserBattles(uid);
+      }
 
       if (!mounted) return;
       setState(() {
         _points = me?.battlePoints ?? 0;
         _pending = pending;
         _battles = list;
+        _mine = mine;
         _loading = false;
       });
     } catch (_) {
@@ -94,7 +106,11 @@ class _BattlesScreenState extends State<BattlesScreen> {
     try {
       await BattleService.instance.accept(b.id);
       if (!mounted) return;
-      _snack('بدأ النزال');
+
+      await ClashOverlay.show(context);
+      if (!mounted) return;
+
+      setState(() => _tab = 2);
       _load();
     } catch (_) {
       _snack('تعذّر قبول التحدي');
@@ -137,7 +153,11 @@ class _BattlesScreenState extends State<BattlesScreen> {
                   : RefreshIndicator(
                       color: AppColors.brand,
                       onRefresh: _load,
-                      child: _tab == 2 ? _pendingList() : _battlesList(),
+                      child: switch (_tab) {
+                        2 => _mineList(),
+                        3 => _pendingList(),
+                        _ => _battlesList(),
+                      },
                     ),
             ),
           ],
@@ -165,25 +185,6 @@ class _BattlesScreenState extends State<BattlesScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                 ),
-                const Spacer(),
-                if (_pending.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 9, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.like,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      '${_pending.length} تحدٍّ جديد',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        height: 1.6,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.background,
-                      ),
-                    ),
-                  ),
               ],
             ),
             const SizedBox(height: 14),
@@ -201,15 +202,21 @@ class _BattlesScreenState extends State<BattlesScreen> {
       ),
       child: Row(
         children: [
-          _tabItem(context, 'الأقرب انتهاءً', 0),
+          _tabItem(context, 'الأقرب', 0),
           _tabItem(context, 'الأكثر إثارة', 1),
-          _tabItem(context, 'تحدياتي', 2),
+          _tabItem(context, 'نزالاتي', 2),
+          _tabItem(context, 'تحدياتي', 3, badge: _pending.length),
         ],
       ),
     );
   }
 
-  Widget _tabItem(BuildContext context, String label, int index) {
+  Widget _tabItem(
+    BuildContext context,
+    String label,
+    int index, {
+    int badge = 0,
+  }) {
     final active = _tab == index;
 
     return Expanded(
@@ -220,17 +227,49 @@ class _BattlesScreenState extends State<BattlesScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                label,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontSize: 13,
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                      color: active ? AppColors.text : AppColors.textMuted,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Text(
+                    label,
+                    style:
+                        Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontSize: 12.5,
+                              fontWeight: active
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: active
+                                  ? AppColors.text
+                                  : AppColors.textMuted,
+                            ),
+                  ),
+                  if (badge > 0)
+                    Positioned(
+                      top: -6,
+                      left: -12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.like,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Text(
+                          '$badge',
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            height: 1.4,
+                            color: AppColors.background,
+                          ),
+                        ),
+                      ),
                     ),
+                ],
               ),
               const SizedBox(height: 8),
               Container(
-                width: 40,
+                width: 34,
                 height: 3,
                 decoration: BoxDecoration(
                   color: active ? AppColors.brand : Colors.transparent,
@@ -254,6 +293,78 @@ class _BattlesScreenState extends State<BattlesScreen> {
       itemBuilder: (_, i) => BattleCard(
         battle: _battles[i],
         onOpenProfile: _openProfile,
+      ),
+    );
+  }
+
+  Widget _mineList() {
+    if (_mine.isEmpty) return _empty('لم تخض نزالًا بعد');
+
+    final uid = SupabaseService.instance.currentUserId;
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 6, bottom: 90),
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: _mine.length,
+      itemBuilder: (_, i) {
+        final b = _mine[i];
+
+        return Column(
+          children: [
+            if (b.isFinished) _resultBanner(context, b, uid),
+            BattleCard(battle: b, onOpenProfile: _openProfile),
+          ],
+        );
+      },
+    );
+  }
+
+  /// شريط النتيجة فوق نزالي المنتهي
+  Widget _resultBanner(BuildContext context, Battle b, String? uid) {
+    final won = b.winnerId != null && b.winnerId == uid;
+    final tie = b.isTie;
+
+    final color = tie
+        ? AppColors.textMuted
+        : won
+            ? const Color(0xFFD4A017)
+            : AppColors.like;
+
+    final label = tie
+        ? 'انتهى بالتعادل · +١ نقطة'
+        : won
+            ? 'فزتَ بهذا النزال · +٤ نقاط'
+            : 'خسرتَ هذا النزال · +١ نقطة';
+
+    final icon = tie
+        ? Icons.remove
+        : won
+            ? Icons.emoji_events
+            : Icons.shield_outlined;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.45)),
+      ),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        children: [
+          Icon(icon, size: 19, color: color),
+          const SizedBox(width: 9),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              height: 1.6,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -358,7 +469,7 @@ class _BattlesScreenState extends State<BattlesScreen> {
                         height: 38,
                         alignment: Alignment.center,
                         child: const Text(
-                          'قبول التحدي',
+                          '⚔️ قبول التحدي',
                           style: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w700,
@@ -408,7 +519,7 @@ class _BattlesScreenState extends State<BattlesScreen> {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.22),
+        SizedBox(height: MediaQuery.of(context).size.height * 0.2),
         Center(
           child: Column(
             children: [
