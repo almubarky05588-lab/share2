@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/battle.dart';
 import '../models/post.dart';
@@ -101,6 +102,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       battles: p.battlesCount,
       wins: p.battlesWon,
     );
+  }
+
+  /// يفتح موقع المستخدم في المتصفح
+  Future<void> _openWebsite() async {
+    final url = _profile?.websiteUrl;
+    if (url == null) return;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      _snack('الرابط غير صالح');
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) _snack('تعذّر فتح الرابط');
   }
 
   void _openWaves() {
@@ -662,8 +678,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 if (p.location != null && p.location!.isNotEmpty)
                   _meta(context, Icons.place_outlined, p.location!),
                 if (p.websiteLabel != null)
-                  _meta(context, Icons.link, p.websiteLabel!,
-                      color: AppColors.brand),
+                  InkWell(
+                    onTap: _openWebsite,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.link,
+                            size: 15, color: AppColors.brand),
+                        const SizedBox(width: 5),
+                        Text(
+                          p.websiteLabel!,
+                          style: t.bodySmall?.copyWith(
+                            color: AppColors.brand,
+                            decoration: TextDecoration.underline,
+                            decorationColor:
+                                AppColors.brand.withOpacity(0.5),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (p.joined != null)
                   _meta(context, Icons.calendar_today_outlined, p.joined!),
               ],
