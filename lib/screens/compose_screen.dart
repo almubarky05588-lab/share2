@@ -89,6 +89,23 @@ class _ComposeScreenState extends State<ComposeScreen> {
     });
   }
 
+  /// اتجاه حقل الكتابة حسب أول حرف قوي:
+  /// عربي = RTL، لاتيني (مثل منشن @noura) = LTR حتى لا تنقلب @
+  TextDirection _detectDirection(String text) {
+    for (final ch in text.runes) {
+      final isArabic = (ch >= 0x0600 && ch <= 0x06FF) ||
+          (ch >= 0x0750 && ch <= 0x077F) ||
+          (ch >= 0xFB50 && ch <= 0xFDFF) ||
+          (ch >= 0xFE70 && ch <= 0xFEFF);
+      if (isArabic) return TextDirection.rtl;
+
+      final isLatin =
+          (ch >= 0x41 && ch <= 0x5A) || (ch >= 0x61 && ch <= 0x7A);
+      if (isLatin) return TextDirection.ltr;
+    }
+    return TextDirection.rtl;
+  }
+
   Future<void> _loadMe() async {
     final me = await SupabaseService.instance.fetchMyProfile();
 
@@ -612,6 +629,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
               controller: _controller,
               autofocus: true,
               textAlign: TextAlign.right,
+              textDirection: _detectDirection(_controller.text),
               minLines: 3,
               maxLines: 8,
               style: Theme.of(context)
