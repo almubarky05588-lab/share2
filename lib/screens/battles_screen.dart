@@ -21,9 +21,13 @@ class BattlesScreen extends StatefulWidget {
   State<BattlesScreen> createState() => _BattlesScreenState();
 }
 
-class _BattlesScreenState extends State<BattlesScreen> {
+class _BattlesScreenState extends State<BattlesScreen>
+    with SingleTickerProviderStateMixin {
   /// 0 الأقرب · 1 الأكثر إثارة · 2 نزالاتي · 3 تحدياتي
   int _tab = 0;
+
+  /// فلتر المجال — null يعني الكل
+  BattleTopic? _topic;
 
   bool _loading = true;
   List<Battle> _battles = const [];
@@ -32,6 +36,11 @@ class _BattlesScreenState extends State<BattlesScreen> {
   int _points = 0;
 
   RealtimeChannel? _channel;
+
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
 
   @override
   void initState() {
@@ -42,6 +51,7 @@ class _BattlesScreenState extends State<BattlesScreen> {
 
   @override
   void dispose() {
+    _pulse.dispose();
     final c = _channel;
     if (c != null) BattleService.instance.unwatch(c);
     super.dispose();
@@ -96,6 +106,47 @@ class _BattlesScreenState extends State<BattlesScreen> {
     setState(() => _tab = i);
     _load();
   }
+
+  /// القائمة بعد فلتر المجال
+  List<Battle> get _filtered => _topic == null
+      ? _battles
+      : _battles.where((b) => b.topic == _topic).toList();
+
+  /// النزال الأسخن — الأقرب لـ50/50 والأعلى قوة
+  Battle? get _hottest {
+    final active =
+        _filtered.where((b) => b.isActive && b.totalVotes > 0).toList();
+    if (active.length < 2) return null;
+
+    active.sort((a, b) {
+      final da = (a.challengerRatio - 0.5).abs();
+      final db = (b.challengerRatio - 0.5).abs();
+      final c = da.compareTo(db);
+      return c != 0 ? c : b.totalVotes.compareTo(a.totalVotes);
+    });
+
+    return active.first;
+  }
+
+  /// إجمالي القوة المضروبة في النزالات المعروضة
+  int get _totalPower =>
+      _battles.fold(0, (sum, b) => sum + b.totalVotes);
+
+  /// أقرب حسم
+  Battle? get _soonest {
+    final active =
+        _battles.where((b) => b.isActive && b.endsAt != null).toList();
+    if (active.isEmpty) return null;
+    active.sort((a, b) => a.remaining.compareTo(b.remaining));
+    return active.first;
+  }
+
+  /// هل في المجال نزال في لحظاته الحرجة؟
+  bool _topicUrgent(BattleTopic t) => _battles.any((b) =>
+      b.topic == t &&
+      b.isActive &&
+      b.endsAt != null &&
+      b.remaining.inMinutes < 30);
 
   void _openProfile(String id) {
     Navigator.of(context).push(
@@ -152,6 +203,8 @@ class _BattlesScreenState extends State<BattlesScreen> {
           children: [
             _header(context),
             _tabs(context),
+            if (_tab <= 1 && !_loading && _battles.isNotEmpty)
+              _topicChips(context),
             Expanded(
               child: _loading
                   ? const Center(
@@ -195,10 +248,146 @@ class _BattlesScreenState extends State<BattlesScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
+            if (_tab <= 1 && !_loading && _battles.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              _statsStrip(context),
+            ],
+            const SizedBox(height: 12),
             RankProgress(points: _points),
           ],
         ),
+      ),
+    );
+  }
+
+  /// شريط الإحصاءات الحية
+  Widget _statsStrip(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    final active = _battles.where((b) => b.isActive).length;
+    final soon = _soonest;
+
+    Widget item(String emoji, String text) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 13)),
+            const SizedBox(width: 4),
+            Text(text,
+                style: t.bodySmall
+                    ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600)),
+          ],
+        );
+
+    return Wrap(
+      spacing: 14,
+      runSpacing: 4,
+      children: [
+        item('⚔️', '$active نزال مشتعل'),
+        item('⚡', '$_totalPower قوة ضُربت'),
+        if (soon != null) item('⏰', 'أقرب حسم ${soon.countdown}'),
+      ],
+    );
+  }
+
+  /// فلاتر المجالات
+  Widget _topicChips(BuildContext context) {
+    Widget chip({
+      required String label,
+      required IconData? icon,
+      required bool active,
+      required bool urgent,
+      required VoidCallback onTap,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(left: 8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+                decoration: BoxDecoration(
+                  color: active
+                      ? AppColors.brand
+                      : AppColors.border.withOpacity(0.35),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(icon,
+                          size: 14,
+                          color: active
+                              ? AppColors.background
+                              : AppColors.textMuted),
+                      const SizedBox(width: 5),
+                    ],
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1.5,
+                        color: active
+                            ? AppColors.background
+                            : AppColors.text,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (urgent)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: AnimatedBuilder(
+                    animation: _pulse,
+                    builder: (_, __) => Container(
+                      width: 8 + _pulse.value * 3,
+                      height: 8 + _pulse.value * 3,
+                      decoration: BoxDecoration(
+                        color: AppColors.like
+                            .withOpacity(0.6 + _pulse.value * 0.4),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.only(top: 8),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          chip(
+            label: 'الكل',
+            icon: null,
+            active: _topic == null,
+            urgent: false,
+            onTap: () => setState(() => _topic = null),
+          ),
+          ...BattleTopic.values.map(
+            (tp) => chip(
+              label: tp.label,
+              icon: tp.icon,
+              active: _topic == tp,
+              urgent: _topicUrgent(tp),
+              onTap: () => setState(
+                  () => _topic = _topic == tp ? null : tp),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -292,20 +481,38 @@ class _BattlesScreenState extends State<BattlesScreen> {
   }
 
   Widget _battlesList() {
-    if (_battles.isEmpty) return _empty('لا توجد نزالات نشطة الآن');
+    final list = _filtered;
+    if (list.isEmpty) return _empty('الساحة هادئة… من يكسر الصمت؟');
 
-    return ListView.builder(
+    final hot = _hottest;
+    final rest =
+        hot == null ? list : list.where((b) => b.id != hot.id).toList();
+
+    return ListView(
       padding: const EdgeInsets.only(top: 6, bottom: 90),
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: _battles.length,
-      itemBuilder: (_, i) => GestureDetector(
-        onTap: () => _openBattle(_battles[i]),
-        child: BattleCard(
-          battle: _battles[i],
-          onOpenProfile: _openProfile,
-          showArguments: false,
+      children: [
+        if (hot != null)
+          GestureDetector(
+            onTap: () => _openBattle(hot),
+            child: BattleCard(
+              battle: hot,
+              onOpenProfile: _openProfile,
+              showArguments: false,
+              featured: true,
+            ),
+          ),
+        ...rest.map(
+          (b) => GestureDetector(
+            onTap: () => _openBattle(b),
+            child: BattleCard(
+              battle: b,
+              onOpenProfile: _openProfile,
+              showArguments: false,
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -538,13 +745,28 @@ class _BattlesScreenState extends State<BattlesScreen> {
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       children: [
-        SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+        SizedBox(height: MediaQuery.of(context).size.height * 0.18),
         Center(
           child: Column(
             children: [
-              const Text('⚔️', style: TextStyle(fontSize: 38)),
-              const SizedBox(height: 12),
-              Text(text, style: Theme.of(context).textTheme.bodySmall),
+              AnimatedBuilder(
+                animation: _pulse,
+                builder: (_, __) => Transform.rotate(
+                  angle: (_pulse.value - 0.5) * 0.12,
+                  child: Transform.scale(
+                    scale: 1 + _pulse.value * 0.08,
+                    child: const Text('⚔️', style: TextStyle(fontSize: 46)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                text,
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontSize: 15),
+              ),
               const SizedBox(height: 6),
               Text(
                 'تحدَّ أي منشور من قائمة النقاط الثلاث',
