@@ -65,7 +65,7 @@ jobs:
           }
 
       - name: تجهيز ملفات Flutter لـ iOS
-        run: flutter build ios --release --config-only
+        run: flutter build ios --release --config-only --no-codesign
 
       - name: تثبيت Ruby و fastlane
         uses: ruby/setup-ruby@v1
