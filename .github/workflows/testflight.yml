@@ -40,25 +40,32 @@ jobs:
       - name: رفع رقم البناء
         run: |
           BUILD=$(( 100 + ${{ github.run_number }} ))
-          echo "رقم البناء الجديد: $BUILD"
+          echo "رقم البناء: $BUILD"
           sed -i '' -E "s/^version: (.*)\+.*/version: \1+$BUILD/" pubspec.yaml
           grep '^version:' pubspec.yaml
 
-      - name: جلب الحزم
-        run: flutter pub get
+      - name: تنظيف كامل وإعادة تجهيز iOS
+        run: |
+          flutter clean
+          rm -rf ios/Pods ios/Podfile.lock ios/.symlinks
+          rm -rf ~/Library/Developer/Xcode/DerivedData/*
+          flutter pub get
+
+      - name: تثبيت الـ Pods من جديد
+        working-directory: ios
+        run: |
+          pod repo update --silent || true
+          pod install --repo-update
+          echo "✅ اكتمل تثبيت Pods"
 
       - name: فحص الأخطاء البرمجية فقط
         run: |
           flutter analyze --no-fatal-infos --no-fatal-warnings || {
-            echo "⚠️ توجد تحذيرات — نكمل البناء"
+            echo "⚠️ توجد تحذيرات — نكمل"
           }
 
       - name: تجهيز ملفات Flutter لـ iOS
-        run: |
-          flutter build ios --release --no-codesign 2>&1 | tail -60 || {
-            echo "❌ فشل التجهيز — راجع الأسطر أعلاه"
-            exit 1
-          }
+        run: flutter build ios --release --no-codesign
 
       - name: تثبيت Ruby و fastlane
         uses: ruby/setup-ruby@v1
