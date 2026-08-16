@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/battle.dart';
 import '../models/spoil.dart';
@@ -111,6 +112,23 @@ class _BattleCardState extends State<BattleCard> {
       _b.isActive &&
       !_isParty &&
       !BattleVoteMemory.changed.contains(_b.id);
+
+  /// يفتح رابط مصدر في المتصفح
+  Future<void> _openUrl(String url) async {
+    var u = url.trim();
+    if (!u.startsWith('http://') && !u.startsWith('https://')) {
+      u = 'https://$u';
+    }
+
+    final uri = Uri.tryParse(u);
+    if (uri == null) {
+      _snack('الرابط غير صالح');
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) _snack('تعذّر فتح الرابط');
+  }
 
   Future<void> _vote(String side) async {
     if (_busy || !_b.isActive || _isParty) return;
@@ -485,19 +503,31 @@ class _BattleCardState extends State<BattleCard> {
             ...a.sources.map(
               (s) => Padding(
                 padding: const EdgeInsets.only(bottom: 3),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.link, size: 13, color: color),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        BattleArgument.hostOf(s),
-                        overflow: TextOverflow.ellipsis,
-                        style: t.bodySmall?.copyWith(color: color),
-                      ),
+                child: InkWell(
+                  onTap: () => _openUrl(s),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 2, vertical: 3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.link, size: 13, color: color),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            BattleArgument.hostOf(s),
+                            overflow: TextOverflow.ellipsis,
+                            style: t.bodySmall?.copyWith(
+                              color: color,
+                              decoration: TextDecoration.underline,
+                              decorationColor: color.withOpacity(0.5),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
