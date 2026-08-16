@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
 import 'avatar_circle.dart';
 import 'inline_video.dart';
+import 'rank_badge.dart';
 
 /// بطاقة منشور
 class PostCard extends StatefulWidget {
@@ -125,7 +126,6 @@ class _PostCardState extends State<PostCard> {
     _snack('نُسخ رابط المنشور');
   }
 
-  /// تحدَّ هذا المنشور
   Future<void> _challenge() async {
     final target = _shown;
 
@@ -327,6 +327,79 @@ class _PostCardState extends State<PostCard> {
   Widget build(BuildContext context) {
     final p = _shown;
 
+    // منشور بموجة — إطار متدرّج وشريط علوي
+    if (_post.isWave) return _waveWrapper(context, p);
+
+    return _plain(context, p);
+  }
+
+  /// غلاف الموجة
+  Widget _waveWrapper(BuildContext context, Post p) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF5B63E0), Color(0xFF2F6BFF), Color(0xFF00C2FF)],
+        ),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.background,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          children: [
+            _waveBanner(context),
+            _plain(context, p, inWave: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _waveBanner(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFF5B63E0).withOpacity(0.12),
+            const Color(0xFF00C2FF).withOpacity(0.10),
+          ],
+        ),
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(17)),
+      ),
+      child: Row(
+        textDirection: TextDirection.rtl,
+        children: [
+          const Text('🌊', style: TextStyle(fontSize: 15)),
+          const SizedBox(width: 7),
+          Text(
+            'موجة',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontSize: 13.5,
+                  color: AppColors.brand,
+                ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '· تصل ${_post.waveReachLabel}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const Spacer(),
+          if (_post.waveRank != null)
+            RankBadge(rank: _post.waveRank!, size: 14),
+        ],
+      ),
+    );
+  }
+
+  /// البطاقة العادية
+  Widget _plain(BuildContext context, Post p, {bool inWave = false}) {
     return InkWell(
       onTap: widget.onOpenPost == null
           ? null
@@ -340,9 +413,16 @@ class _PostCardState extends State<PostCard> {
           horizontal: AppSizes.screenPadding,
           vertical: 14,
         ),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           color: AppColors.background,
-          border: Border(bottom: BorderSide(color: AppColors.border)),
+          borderRadius: inWave
+              ? const BorderRadius.vertical(bottom: Radius.circular(17))
+              : null,
+          border: inWave
+              ? null
+              : const Border(
+                  bottom: BorderSide(color: AppColors.border),
+                ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -426,6 +506,7 @@ class _PostCardState extends State<PostCard> {
                 if (p.verified)
                   const Icon(Icons.verified,
                       size: 15, color: AppColors.blue),
+                RankBadge(rank: p.rank, size: 14),
                 Text(atHandle(p.handle), style: t.bodySmall),
                 Text('· ${p.timeAgo}', style: t.bodySmall),
               ],
