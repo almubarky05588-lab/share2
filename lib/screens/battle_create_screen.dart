@@ -462,4 +462,16 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
       ),
     );
   }
+Widget _label(BuildContext context, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: Theme.of(context)
+            .textTheme
+            .labelMedium
+            ?.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
 }
