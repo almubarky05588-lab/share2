@@ -10,6 +10,7 @@ import '../widgets/avatar_circle.dart';
 import '../widgets/battle_card.dart';
 import '../widgets/clash_overlay.dart';
 import '../widgets/rank_badge.dart';
+import 'battle_detail_screen.dart';
 import 'profile_screen.dart';
 
 /// شاشة النزالات
@@ -100,6 +101,13 @@ class _BattlesScreenState extends State<BattlesScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ProfileScreen(userId: id)),
     );
+  }
+
+  Future<void> _openBattle(Battle b) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => BattleDetailScreen(battle: b)),
+    );
+    _load();
   }
 
   Future<void> _accept(Battle b) async {
@@ -290,9 +298,13 @@ class _BattlesScreenState extends State<BattlesScreen> {
       padding: const EdgeInsets.only(top: 6, bottom: 90),
       physics: const AlwaysScrollableScrollPhysics(),
       itemCount: _battles.length,
-      itemBuilder: (_, i) => BattleCard(
-        battle: _battles[i],
-        onOpenProfile: _openProfile,
+      itemBuilder: (_, i) => GestureDetector(
+        onTap: () => _openBattle(_battles[i]),
+        child: BattleCard(
+          battle: _battles[i],
+          onOpenProfile: _openProfile,
+          showArguments: false,
+        ),
       ),
     );
   }
@@ -312,7 +324,14 @@ class _BattlesScreenState extends State<BattlesScreen> {
         return Column(
           children: [
             if (b.isFinished) _resultBanner(context, b, uid),
-            BattleCard(battle: b, onOpenProfile: _openProfile),
+            GestureDetector(
+              onTap: () => _openBattle(b),
+              child: BattleCard(
+                battle: b,
+                onOpenProfile: _openProfile,
+                showArguments: false,
+              ),
+            ),
           ],
         );
       },
