@@ -1,11 +1,10 @@
 import 'dart:math' as math;
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:just_audio/just_audio.dart';
 
 import '../models/battle.dart';
-import '../theme/app_theme.dart';
 
 /// مؤثر الفوز — تاج ينزل مع ومضة ذهبية
 class VictoryOverlay extends StatefulWidget {
@@ -15,10 +14,7 @@ class VictoryOverlay extends StatefulWidget {
     this.rankUp,
   });
 
-  /// النقاط بعد الفوز
   final int points;
-
-  /// الرتبة الجديدة إن حدث ترقٍّ
   final BattleRank? rankUp;
 
   static Future<void> show(
@@ -55,8 +51,15 @@ class _VictoryOverlayState extends State<VictoryOverlay>
   void initState() {
     super.initState();
     HapticFeedback.mediumImpact();
-    _player.play(AssetSource('victory.mp3'));
+    _playSound();
     _c.forward();
+  }
+
+  Future<void> _playSound() async {
+    try {
+      await _player.setAsset('assets/victory.mp3');
+      await _player.play();
+    } catch (_) {}
   }
 
   @override
@@ -85,7 +88,6 @@ class _VictoryOverlayState extends State<VictoryOverlay>
             return Stack(
               alignment: Alignment.center,
               children: [
-                // هالة ذهبية
                 Opacity(
                   opacity: fade * 0.5,
                   child: Container(
@@ -99,8 +101,6 @@ class _VictoryOverlayState extends State<VictoryOverlay>
                     ),
                   ),
                 ),
-
-                // أشعة دوّارة
                 Transform.rotate(
                   angle: _c.value * math.pi / 3,
                   child: Opacity(
@@ -111,7 +111,6 @@ class _VictoryOverlayState extends State<VictoryOverlay>
                     ),
                   ),
                 ),
-
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
