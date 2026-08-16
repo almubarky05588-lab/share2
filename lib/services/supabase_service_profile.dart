@@ -304,7 +304,7 @@ extension SupabaseProfileApi on SupabaseService {
         .from('profiles')
         .select(
           'id, handle, name, bio, location, website, avatar_url, cover_url, '
-          'verified, created_at, battle_points, battles_count, battles_won',
+          'verified, created_at, battle_points, battles_count, battles_won, is_tester',
         )
         .eq('id', userId)
         .maybeSingle();
@@ -371,6 +371,7 @@ extension SupabaseProfileApi on SupabaseService {
       battlePoints: (row['battle_points'] as num?)?.toInt() ?? 0,
       battlesCount: (row['battles_count'] as num?)?.toInt() ?? 0,
       battlesWon: (row['battles_won'] as num?)?.toInt() ?? 0,
+      isTester: row['is_tester'] as bool? ?? false,
     );
   }
 
