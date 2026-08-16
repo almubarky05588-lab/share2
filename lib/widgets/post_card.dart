@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/post.dart';
+import '../screens/battle_create_screen.dart';
 import '../screens/media_viewer_screen.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
@@ -124,6 +125,20 @@ class _PostCardState extends State<PostCard> {
     _snack('نُسخ رابط المنشور');
   }
 
+  /// تحدَّ هذا المنشور
+  Future<void> _challenge() async {
+    final target = _shown;
+
+    final done = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => BattleCreateScreen(target: target),
+      ),
+    );
+
+    if (done == true) _snack('أُرسل التحدي — بانتظار القبول');
+  }
+
   Future<void> _delete() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -217,6 +232,14 @@ class _PostCardState extends State<PostCard> {
               ),
             ),
             const SizedBox(height: 12),
+            if (!_isMine && target.body.trim().isNotEmpty)
+              _menuItem(
+                ctx,
+                icon: Icons.bolt,
+                label: 'تحدَّ هذا المنشور',
+                color: AppColors.brand,
+                onTap: _challenge,
+              ),
             _menuItem(
               ctx,
               icon: Icons.link,
@@ -261,8 +284,10 @@ class _PostCardState extends State<PostCard> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 15),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+          textDirection: TextDirection.rtl,
           children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 12),
             Text(
               label,
               style: Theme.of(context)
@@ -270,8 +295,6 @@ class _PostCardState extends State<PostCard> {
                   .titleMedium
                   ?.copyWith(fontSize: 15, color: color),
             ),
-            const SizedBox(width: 12),
-            Icon(icon, size: 20, color: color),
           ],
         ),
       ),
@@ -423,7 +446,6 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  /// نص المنشور — المنشن والهاشتاق ملوّنان بعزل اتجاه صحيح
   Widget _body(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
@@ -440,7 +462,6 @@ class _PostCardState extends State<PostCard> {
       final isTag = token.startsWith('#');
       final name = token.substring(1);
 
-      // عزل الاتجاه: LRI … PDI
       spans.add(TextSpan(
         text: '\u2066$token\u2069',
         style: t.bodyMedium?.copyWith(
