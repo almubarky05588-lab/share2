@@ -77,6 +77,7 @@ extension SupabaseProfileApi on SupabaseService {
         followers: 0,
         following: 0,
         posts: 0,
+        battlePoints: (r['battle_points'] as num?)?.toInt() ?? 0,
       );
 
   // ── قوائم المتابعة ───────────────────────────────────────
@@ -85,7 +86,7 @@ extension SupabaseProfileApi on SupabaseService {
     final rows = await _db
         .from('follows')
         .select(
-          'follower:profiles!follows_follower_id_fkey(id, handle, name, bio, avatar_url, verified)',
+          'follower:profiles!follows_follower_id_fkey(id, handle, name, bio, avatar_url, verified, battle_points)',
         )
         .eq('following_id', userId)
         .limit(100);
@@ -101,7 +102,7 @@ extension SupabaseProfileApi on SupabaseService {
     final rows = await _db
         .from('follows')
         .select(
-          'following:profiles!follows_following_id_fkey(id, handle, name, bio, avatar_url, verified)',
+          'following:profiles!follows_following_id_fkey(id, handle, name, bio, avatar_url, verified, battle_points)',
         )
         .eq('follower_id', userId)
         .limit(100);
@@ -302,7 +303,8 @@ extension SupabaseProfileApi on SupabaseService {
     final row = await _db
         .from('profiles')
         .select(
-          'id, handle, name, bio, location, website, avatar_url, cover_url, verified, created_at',
+          'id, handle, name, bio, location, website, avatar_url, cover_url, '
+          'verified, created_at, battle_points, battles_count, battles_won',
         )
         .eq('id', userId)
         .maybeSingle();
@@ -366,6 +368,9 @@ extension SupabaseProfileApi on SupabaseService {
       followsYou: followsYou,
       isBlocked: blocked,
       blockedMe: hasBlockedMe,
+      battlePoints: (row['battle_points'] as num?)?.toInt() ?? 0,
+      battlesCount: (row['battles_count'] as num?)?.toInt() ?? 0,
+      battlesWon: (row['battles_won'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -429,7 +434,8 @@ extension SupabaseProfileApi on SupabaseService {
 
     var builder = _db
         .from('profiles')
-        .select('id, handle, name, bio, avatar_url, verified');
+        .select(
+            'id, handle, name, bio, avatar_url, verified, battle_points');
 
     if (q.isNotEmpty) {
       builder = builder.or('handle.ilike.%$q%,name.ilike.%$q%');
