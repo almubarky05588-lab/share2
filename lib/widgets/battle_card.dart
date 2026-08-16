@@ -480,21 +480,26 @@ class _BattleCardState extends State<BattleCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(a.body, style: t.bodyMedium?.copyWith(fontSize: 14)),
-          if (a.hasSource) ...[
+          if (a.hasSources) ...[
             const SizedBox(height: 7),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.link, size: 13, color: color),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    a.sourceLabel,
-                    overflow: TextOverflow.ellipsis,
-                    style: t.bodySmall?.copyWith(color: color),
-                  ),
+            ...a.sources.map(
+              (s) => Padding(
+                padding: const EdgeInsets.only(bottom: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.link, size: 13, color: color),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        BattleArgument.hostOf(s),
+                        overflow: TextOverflow.ellipsis,
+                        style: t.bodySmall?.copyWith(color: color),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ],
           const SizedBox(height: 4),
