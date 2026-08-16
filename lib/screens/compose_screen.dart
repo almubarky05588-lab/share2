@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,13 +10,17 @@ import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
 import '../widgets/avatar_circle.dart';
+import '../widgets/rich_compose_field.dart';
 
 /// نشر جديد أو رد على منشور
 class ComposeScreen extends StatefulWidget {
-  const ComposeScreen({super.key, this.replyTo});
+  const ComposeScreen({super.key, this.replyTo, this.initialText});
 
   /// المنشور المردود عليه — إن وُجد
   final Post? replyTo;
+
+  /// نص مبدئي (مثل @معرّف عند المنشن من الملف الشخصي)
+  final String? initialText;
 
   @override
   State<ComposeScreen> createState() => _ComposeScreenState();
@@ -24,7 +29,8 @@ class ComposeScreen extends StatefulWidget {
 class _ComposeScreenState extends State<ComposeScreen> {
   static const _maxLength = 280;
 
-  final _controller = TextEditingController();
+  late final RichComposeController _controller =
+      RichComposeController(text: widget.initialText ?? '');
   final _picker = ImagePicker();
 
   File? _media;
@@ -33,19 +39,48 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   UserProfile? _me;
 
+  /// اقتراحات المنشن
+  List<UserProfile> _suggestions = const [];
+  Timer? _debounce;
+
   bool get _isReply => widget.replyTo != null;
 
   @override
   void initState() {
     super.initState();
-    _controller.addListener(() => setState(() {}));
+    _controller.addListener(_onChanged);
     _loadMe();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     super.dispose();
+  }
+
+  void _onChanged() {
+    setState(() {});
+
+    final q = _controller.activeMentionQuery;
+    _debounce?.cancel();
+
+    if (q == null) {
+      if (_suggestions.isNotEmpty) setState(() => _suggestions = const []);
+      return;
+    }
+
+    _debounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final me = SupabaseService.instance.currentUserId;
+        final users = await SupabaseService.instance.searchUsers(q);
+        if (!mounted) return;
+        setState(() {
+          _suggestions =
+              users.where((u) => u.id != me).take(6).toList();
+        });
+      } catch (_) {}
+    });
   }
 
   Future<void> _loadMe() async {
@@ -148,6 +183,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   if (_isReply) _originalPost(context, widget.replyTo!),
                   if (!_isReply) _replyScope(context),
                   _editor(context),
+                  if (_suggestions.isNotEmpty) _mentionList(context),
                   if (_media != null) _preview(),
                 ],
               ),
@@ -214,7 +250,6 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
-  /// المنشور الأصلي أعلى شاشة الرد
   Widget _originalPost(BuildContext context, Post p) {
     final t = Theme.of(context).textTheme;
 
@@ -234,11 +269,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   size: 42,
                 ),
                 const SizedBox(height: 6),
-                Container(
-                  width: 2,
-                  height: 42,
-                  color: AppColors.border,
-                ),
+                Container(width: 2, height: 42, color: AppColors.border),
               ],
             ),
             const SizedBox(width: 12),
@@ -262,10 +293,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   ),
                   if (p.body.isNotEmpty) ...[
                     const SizedBox(height: 5),
-                    Text(
-                      p.body,
-                      style: t.bodyMedium?.copyWith(fontSize: 14),
-                    ),
+                    Text(p.body,
+                        style: t.bodyMedium?.copyWith(fontSize: 14)),
                   ],
                   const SizedBox(height: 10),
                   Text.rich(
@@ -361,9 +390,68 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
+  /// اقتراحات المنشن أثناء الكتابة
+  Widget _mentionList(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.border.withOpacity(0.28),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: _suggestions.map((u) {
+          return InkWell(
+            onTap: () {
+              _controller.completeMention(u.handle);
+              setState(() => _suggestions = const []);
+            },
+            child: Directionality(
+              textDirection: TextDirection.rtl,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 9),
+                child: Row(
+                  children: [
+                    AvatarCircle(
+                      initial: u.initial,
+                      seed: u.avatarSeed,
+                      imageUrl: u.avatarUrl,
+                      size: 34,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 5,
+                        children: [
+                          Text(
+                            u.name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontSize: 14),
+                          ),
+                          if (u.verified)
+                            const Icon(Icons.verified,
+                                size: 13, color: AppColors.blue),
+                          Text(atHandle(u.handle),
+                              style: Theme.of(context).textTheme.bodySmall),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _preview() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Stack(
         alignment: Alignment.topLeft,
         children: [
