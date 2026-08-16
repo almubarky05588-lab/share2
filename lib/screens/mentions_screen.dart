@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../models/battle.dart';
 import '../models/notification_item.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
@@ -51,7 +50,7 @@ class MentionsScreenState extends State<MentionsScreen> {
     }
   }
 
-  List<NotificationItem> get _visible {
+  List<NotificationItem> get _filtered {
     switch (_tab) {
       case 1:
         return _items.where((e) => e.isMention).toList();
@@ -68,6 +67,9 @@ class MentionsScreenState extends State<MentionsScreen> {
         return _items;
     }
   }
+
+  /// عناصر العرض: مفردة أو مجموعات
+  List<Object> get _entries => buildNotificationEntries(_filtered);
 
   Future<void> _openItem(NotificationItem item) async {
     // الفوز — يعرض المؤثر
@@ -108,6 +110,15 @@ class MentionsScreenState extends State<MentionsScreen> {
     _load();
   }
 
+  Future<void> _openGroup(NotificationGroup group) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PostDetailScreen(postId: group.postId),
+      ),
+    );
+    _load();
+  }
+
   void _openProfile(String id) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => ProfileScreen(userId: id)),
@@ -122,7 +133,7 @@ class MentionsScreenState extends State<MentionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final list = _visible;
+    final entries = _entries;
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -141,7 +152,7 @@ class MentionsScreenState extends State<MentionsScreen> {
                   : RefreshIndicator(
                       color: AppColors.brand,
                       onRefresh: _load,
-                      child: list.isEmpty
+                      child: entries.isEmpty
                           ? ListView(
                               physics:
                                   const AlwaysScrollableScrollPhysics(),
@@ -165,12 +176,22 @@ class MentionsScreenState extends State<MentionsScreen> {
                               padding: EdgeInsets.zero,
                               physics:
                                   const AlwaysScrollableScrollPhysics(),
-                              itemCount: list.length,
-                              itemBuilder: (_, i) => _NotificationTile(
-                                item: list[i],
-                                onTap: () => _openItem(list[i]),
-                                onOpenProfile: _openProfile,
-                              ),
+                              itemCount: entries.length,
+                              itemBuilder: (_, i) {
+                                final e = entries[i];
+                                if (e is NotificationGroup) {
+                                  return _GroupTile(
+                                    group: e,
+                                    onTap: () => _openGroup(e),
+                                  );
+                                }
+                                final item = e as NotificationItem;
+                                return _NotificationTile(
+                                  item: item,
+                                  onTap: () => _openItem(item),
+                                  onOpenProfile: _openProfile,
+                                );
+                              },
                             ),
                     ),
             ),
@@ -251,7 +272,121 @@ class MentionsScreenState extends State<MentionsScreen> {
   }
 }
 
-/// صف إشعار
+/// بطاقة مجموعة تفاعلات — صور متراكبة وعدّاد، بمظهر هادئ
+class _GroupTile extends StatelessWidget {
+  const _GroupTile({required this.group, this.onTap});
+
+  final NotificationGroup group;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSizes.screenPadding,
+            vertical: 13,
+          ),
+          decoration: BoxDecoration(
+            color: group.unread
+                ? group.iconColor.withOpacity(0.03)
+                : AppColors.background,
+            border: const Border(
+              bottom: BorderSide(color: AppColors.border),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // أيقونة النوع + العدد
+              Column(
+                children: [
+                  Icon(group.icon, size: 22, color: group.iconColor),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${group.count}',
+                    style: t.labelMedium?.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: group.iconColor,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // صور متراكبة
+                    SizedBox(
+                      height: 30,
+                      child: Stack(
+                        children: [
+                          for (var i = group.faces.length - 1;
+                              i >= 0;
+                              i--)
+                            Positioned(
+                              right: i * 21.0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: AppColors.background,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: AvatarCircle(
+                                  initial: group.faces[i].initial,
+                                  seed: group.faces[i].avatarSeed,
+                                  imageUrl: group.faces[i].avatarUrl,
+                                  size: 26,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      group.label,
+                      style: t.bodySmall?.copyWith(
+                        fontSize: 13,
+                        color: AppColors.text.withOpacity(0.75),
+                      ),
+                    ),
+                    if (group.preview != null &&
+                        group.preview!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        group.preview!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.bodySmall?.copyWith(
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text('· ${group.timeAgo}', style: t.bodySmall),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// صف إشعار مفرد — بارز للمنشن والردود، هادئ للتفاعل المفرد
 class _NotificationTile extends StatelessWidget {
   const _NotificationTile({
     required this.item,
@@ -267,6 +402,8 @@ class _NotificationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
     final isWin = item.type == NotificationType.battleWon;
+    final prominent = item.isMention;
+    final quiet = item.isGroupable;
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -274,18 +411,23 @@ class _NotificationTile extends StatelessWidget {
         onTap: onTap,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(
+          padding: EdgeInsets.symmetric(
             horizontal: AppSizes.screenPadding,
-            vertical: 14,
+            vertical: prominent ? 15 : 13,
           ),
           decoration: BoxDecoration(
             color: isWin
                 ? const Color(0xFFD4A017).withOpacity(0.07)
-                : item.unread
-                    ? AppColors.brand.withOpacity(0.05)
-                    : AppColors.background,
-            border: const Border(
-              bottom: BorderSide(color: AppColors.border),
+                : prominent && item.unread
+                    ? AppColors.brand.withOpacity(0.06)
+                    : item.unread
+                        ? AppColors.brand.withOpacity(0.03)
+                        : AppColors.background,
+            border: Border(
+              bottom: const BorderSide(color: AppColors.border),
+              right: prominent
+                  ? const BorderSide(color: AppColors.brand, width: 3)
+                  : BorderSide.none,
             ),
           ),
           child: Row(
@@ -299,7 +441,9 @@ class _NotificationTile extends StatelessWidget {
                   initial: item.initial,
                   seed: item.avatarSeed,
                   imageUrl: item.avatarUrl,
-                  size: AppSizes.avatarMedium,
+                  size: prominent
+                      ? AppSizes.avatarMedium
+                      : AppSizes.avatarMedium - 6,
                 ),
               ),
               const SizedBox(width: 11),
@@ -314,7 +458,9 @@ class _NotificationTile extends StatelessWidget {
                       children: [
                         Text(
                           item.actorName,
-                          style: t.titleMedium?.copyWith(fontSize: 14),
+                          style: t.titleMedium?.copyWith(
+                            fontSize: prominent ? 14.5 : 13.5,
+                          ),
                         ),
                         if (item.verified)
                           const Icon(Icons.verified,
@@ -329,9 +475,14 @@ class _NotificationTile extends StatelessWidget {
                       style: t.bodySmall?.copyWith(
                         color: isWin
                             ? const Color(0xFFD4A017)
-                            : AppColors.text,
-                        fontWeight:
-                            isWin ? FontWeight.w700 : FontWeight.w400,
+                            : prominent
+                                ? AppColors.brand
+                                : quiet
+                                    ? AppColors.text.withOpacity(0.7)
+                                    : AppColors.text,
+                        fontWeight: isWin || prominent
+                            ? FontWeight.w700
+                            : FontWeight.w400,
                       ),
                     ),
                     if (item.preview != null &&
@@ -339,16 +490,29 @@ class _NotificationTile extends StatelessWidget {
                       const SizedBox(height: 5),
                       Text(
                         item.preview!,
-                        maxLines: 3,
+                        maxLines: prominent ? 6 : 2,
                         overflow: TextOverflow.ellipsis,
-                        style: t.bodySmall,
+                        style: prominent
+                            ? t.bodyMedium?.copyWith(
+                                fontSize: 14.5,
+                                color: AppColors.text,
+                              )
+                            : t.bodySmall?.copyWith(
+                                color: AppColors.textMuted,
+                              ),
                       ),
                     ],
                   ],
                 ),
               ),
               const SizedBox(width: 10),
-              Icon(item.icon, size: 18, color: item.iconColor),
+              Icon(
+                item.icon,
+                size: prominent ? 20 : 17,
+                color: quiet
+                    ? item.iconColor.withOpacity(0.6)
+                    : item.iconColor,
+              ),
             ],
           ),
         ),
