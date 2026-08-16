@@ -30,8 +30,9 @@ class _ComposeScreenState extends State<ComposeScreen> {
   static const _maxLength = 280;
   static const _gold = Color(0xFFD4A017);
 
-  late final RichComposeController _controller =
-      RichComposeController(text: widget.initialText ?? '');
+  /// النص الابتدائي معزول الاتجاه حتى لا تنقلب @ في المنشن
+  late final RichComposeController _controller = RichComposeController(
+      text: bidiSafeMentions(widget.initialText ?? ''));
   final _picker = ImagePicker();
 
   File? _media;
@@ -125,14 +126,15 @@ class _ComposeScreenState extends State<ComposeScreen> {
     });
   }
 
-  int get _remaining => _maxLength - _controller.text.characters.length;
+  int get _remaining =>
+      _maxLength - _controller.cleanText.characters.length;
 
   int get _pickedReach => _spoils
       .where((s) => _picked.contains(s.id))
       .fold(0, (sum, s) => sum + s.reach);
 
   bool get _canSend =>
-      (_controller.text.trim().isNotEmpty || _media != null) &&
+      (_controller.cleanText.trim().isNotEmpty || _media != null) &&
       _remaining >= 0 &&
       !_sending;
 
@@ -195,6 +197,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
     if (!_canSend) return;
     setState(() => _sending = true);
 
+    final body = _controller.cleanText.trim();
+
     try {
       String? url;
       String? type;
@@ -208,20 +212,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
       if (_picked.isNotEmpty) {
         await BattleService.instance.publishWithSpoils(
           spoilIds: _picked.toList(),
-          body: _controller.text.trim(),
+          body: body,
           mediaUrl: url,
           mediaType: type,
         );
       } else if (_useWave && _wave != null) {
         await BattleService.instance.publishWithWave(
           waveId: _wave!.id,
-          body: _controller.text.trim(),
+          body: body,
           mediaUrl: url,
           mediaType: type,
         );
       } else {
         await SupabaseService.instance.createPost(
-          _controller.text.trim(),
+          body,
           replyTo: widget.replyTo?.id,
           mediaUrl: url,
           mediaType: type,
@@ -555,7 +559,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   ),
                   if (p.body.isNotEmpty) ...[
                     const SizedBox(height: 5),
-                    Text(p.body, style: t.bodyMedium?.copyWith(fontSize: 14)),
+                    Text(bidiSafeMentions(p.body),
+                        style: t.bodyMedium?.copyWith(fontSize: 14)),
                   ],
                   const SizedBox(height: 10),
                   Text.rich(
