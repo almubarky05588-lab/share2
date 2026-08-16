@@ -3,30 +3,34 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../models/battle.dart';
+import '../models/spoil.dart';
 import '../services/battle_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
 import 'avatar_circle.dart';
 
-/// ذاكرة أصوات الجلسة — تمنع عودة أزرار التصويت بعد التصويت
+/// ذاكرة أصوات الجلسة
 class BattleVoteMemory {
   BattleVoteMemory._();
   static final Map<String, String> votes = {};
+  static final Set<String> changed = {};
 }
 
-/// بطاقة نزال — عمودية مع خط ملوّن لكل طرف
+/// بطاقة نزال
 class BattleCard extends StatefulWidget {
   const BattleCard({
     super.key,
     required this.battle,
     this.onOpenProfile,
     this.onChanged,
+    this.showArguments = true,
   });
 
   final Battle battle;
   final void Function(String userId)? onOpenProfile;
   final VoidCallback? onChanged;
+  final bool showArguments;
 
   @override
   State<BattleCard> createState() => _BattleCardState();
@@ -40,7 +44,9 @@ class _BattleCardState extends State<BattleCard> {
   Timer? _tick;
   bool _busy = false;
 
-  /// يدمج صوت الجلسة إن لم يأتِ من الخادم
+  List<BattleArgument> _args = const [];
+  int _myPower = 1;
+
   static Battle _withMemory(Battle b) {
     if (b.myVote != null) {
       BattleVoteMemory.votes[b.id] = b.myVote!;
@@ -53,12 +59,31 @@ class _BattleCardState extends State<BattleCard> {
   @override
   void initState() {
     super.initState();
+    _loadExtras();
+
     if (_b.isActive) {
       _tick = Timer.periodic(
         const Duration(seconds: 1),
         (_) => mounted ? setState(() {}) : null,
       );
     }
+  }
+
+  Future<void> _loadExtras() async {
+    final power = await BattleService.instance.myStrikePower();
+    List<BattleArgument> args = const [];
+
+    if (widget.showArguments) {
+      try {
+        args = await BattleService.instance.fetchArguments(_b.id);
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _myPower = power;
+      _args = args;
+    });
   }
 
   @override
@@ -81,8 +106,20 @@ class _BattleCardState extends State<BattleCard> {
     return me == _b.challenger.userId || me == _b.opponent.userId;
   }
 
+  bool get _canChange =>
+      _b.voted &&
+      _b.isActive &&
+      !_isParty &&
+      !BattleVoteMemory.changed.contains(_b.id);
+
   Future<void> _vote(String side) async {
-    if (_busy || _b.voted || !_b.isActive || _isParty) return;
+    if (_busy || !_b.isActive || _isParty) return;
+
+    // تغيير الصوت
+    if (_b.voted) {
+      if (!_canChange || _b.myVote == side) return;
+      return _change(side);
+    }
 
     setState(() => _busy = true);
 
@@ -91,44 +128,81 @@ class _BattleCardState extends State<BattleCard> {
       BattleVoteMemory.votes[_b.id] = side;
 
       if (!mounted) return;
-
-      setState(() {
-        _b = _b.copyWith(
-          myVote: side,
-          challenger: side == 'challenger'
-              ? BattleSide(
-                  userId: _b.challenger.userId,
-                  name: _b.challenger.name,
-                  handle: _b.challenger.handle,
-                  text: _b.challenger.text,
-                  avatarUrl: _b.challenger.avatarUrl,
-                  verified: _b.challenger.verified,
-                  votes: _b.challenger.votes + 1,
-                )
-              : _b.challenger,
-          opponent: side == 'opponent'
-              ? BattleSide(
-                  userId: _b.opponent.userId,
-                  name: _b.opponent.name,
-                  handle: _b.opponent.handle,
-                  text: _b.opponent.text,
-                  avatarUrl: _b.opponent.avatarUrl,
-                  verified: _b.opponent.verified,
-                  votes: _b.opponent.votes + 1,
-                )
-              : _b.opponent,
-        );
-      });
-
+      setState(() => _b = _applyVote(side, _myPower));
       widget.onChanged?.call();
     } catch (_) {
-      // صوّت مسبقًا — نعلّمها محليًا ونعرض النتيجة
       BattleVoteMemory.votes[_b.id] = side;
       if (!mounted) return;
       setState(() => _b = _b.copyWith(myVote: side));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _change(String side) async {
+    setState(() => _busy = true);
+
+    try {
+      await BattleService.instance.changeVote(_b.id, side);
+      BattleVoteMemory.votes[_b.id] = side;
+      BattleVoteMemory.changed.add(_b.id);
+
+      if (!mounted) return;
+
+      // سحب القوة من القديم وإضافتها للجديد
+      final old = _b.myVote!;
+      var ch = _b.challenger.votes;
+      var op = _b.opponent.votes;
+
+      if (old == 'challenger') {
+        ch -= _myPower;
+        op += _myPower;
+      } else {
+        op -= _myPower;
+        ch += _myPower;
+      }
+
+      setState(() {
+        _b = _b.copyWith(
+          myVote: side,
+          challenger: _side(_b.challenger, ch < 0 ? 0 : ch),
+          opponent: _side(_b.opponent, op < 0 ? 0 : op),
+        );
+      });
+
+      _snack('غيّرتَ صوتك');
+      widget.onChanged?.call();
+    } catch (_) {
+      _snack('لا يمكنك تغيير صوتك مرة أخرى');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Battle _applyVote(String side, int power) => _b.copyWith(
+        myVote: side,
+        challenger: side == 'challenger'
+            ? _side(_b.challenger, _b.challenger.votes + power)
+            : _b.challenger,
+        opponent: side == 'opponent'
+            ? _side(_b.opponent, _b.opponent.votes + power)
+            : _b.opponent,
+      );
+
+  BattleSide _side(BattleSide s, int votes) => BattleSide(
+        userId: s.userId,
+        name: s.name,
+        handle: s.handle,
+        text: s.text,
+        avatarUrl: s.avatarUrl,
+        verified: s.verified,
+        votes: votes,
+      );
+
+  void _snack(String t) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(t)));
   }
 
   @override
@@ -157,9 +231,10 @@ class _BattleCardState extends State<BattleCard> {
         child: Column(
           children: [
             _head(context),
-            _side(context, _b.challenger, 'challenger', _red, showResult),
+            _sideBlock(context, _b.challenger, 'challenger', _red, showResult),
             _divider(context),
-            _side(context, _b.opponent, 'opponent', _blue, showResult),
+            _sideBlock(context, _b.opponent, 'opponent', _blue, showResult),
+            if (_args.isNotEmpty) _argumentsBlock(context),
             if (showResult) _result(context) else _hint(context),
           ],
         ),
@@ -182,10 +257,8 @@ class _BattleCardState extends State<BattleCard> {
           const SizedBox(width: 7),
           Text(
             'نزال',
-            style: t.titleMedium?.copyWith(
-              fontSize: 14,
-              color: AppColors.brand,
-            ),
+            style: t.titleMedium
+                ?.copyWith(fontSize: 14, color: AppColors.brand),
           ),
           const SizedBox(width: 6),
           Text('· ${_b.topic.label}', style: t.bodySmall),
@@ -229,7 +302,7 @@ class _BattleCardState extends State<BattleCard> {
     );
   }
 
-  Widget _side(
+  Widget _sideBlock(
     BuildContext context,
     BattleSide s,
     String key,
@@ -241,15 +314,13 @@ class _BattleCardState extends State<BattleCard> {
     final won = _b.isFinished && _b.winnerId == s.userId;
 
     return InkWell(
-      onTap: showResult ? null : () => _vote(key),
+      onTap: showResult && !_canChange ? null : () => _vote(key),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         decoration: BoxDecoration(
           color: mine ? color.withOpacity(0.05) : null,
-          border: Border(
-            right: BorderSide(color: color, width: 4),
-          ),
+          border: Border(right: BorderSide(color: color, width: 4)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -292,6 +363,9 @@ class _BattleCardState extends State<BattleCard> {
             if (!showResult) ...[
               const SizedBox(height: 10),
               _voteButton(context, color, key),
+            ] else if (_canChange && !mine) ...[
+              const SizedBox(height: 10),
+              _switchButton(context, color, key),
             ],
           ],
         ),
@@ -307,7 +381,7 @@ class _BattleCardState extends State<BattleCard> {
         borderRadius: BorderRadius.circular(20),
         onTap: _busy ? null : () => _vote(key),
         child: Container(
-          height: 34,
+          height: 36,
           alignment: Alignment.center,
           width: double.infinity,
           child: _busy
@@ -317,15 +391,115 @@ class _BattleCardState extends State<BattleCard> {
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: color),
                 )
-              : Text(
-                  'صوّت',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: color,
-                  ),
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bolt, size: 15, color: color),
+                    const SizedBox(width: 6),
+                    Text(
+                      'اضرب · $_myPower',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: color,
+                      ),
+                    ),
+                  ],
                 ),
         ),
+      ),
+    );
+  }
+
+  Widget _switchButton(BuildContext context, Color color, String key) {
+    return InkWell(
+      onTap: _busy ? null : () => _vote(key),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        height: 32,
+        alignment: Alignment.center,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.5)),
+        ),
+        child: Text(
+          'حوّل ضربتي هنا',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            height: 1.6,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ردود الطرفين
+  Widget _argumentsBlock(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.forum_outlined,
+                  size: 15, color: AppColors.textMuted),
+              const SizedBox(width: 7),
+              Text('الحجج', style: t.bodySmall),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ..._args.map((a) => _argument(context, a)),
+        ],
+      ),
+    );
+  }
+
+  Widget _argument(BuildContext context, BattleArgument a) {
+    final t = Theme.of(context).textTheme;
+    final color = a.side == 'challenger' ? _red : _blue;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(11),
+        border: Border(right: BorderSide(color: color, width: 3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(a.body, style: t.bodyMedium?.copyWith(fontSize: 14)),
+          if (a.hasSource) ...[
+            const SizedBox(height: 7),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.link, size: 13, color: color),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    a.sourceLabel,
+                    overflow: TextOverflow.ellipsis,
+                    style: t.bodySmall?.copyWith(color: color),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(a.timeAgo, style: t.bodySmall?.copyWith(fontSize: 11)),
+        ],
       ),
     );
   }
@@ -343,7 +517,7 @@ class _BattleCardState extends State<BattleCard> {
               size: 14, color: AppColors.textMuted),
           const SizedBox(width: 6),
           Text(
-            'صوّت لترى النتيجة',
+            'اضرب لترى النتيجة',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -384,19 +558,15 @@ class _BattleCardState extends State<BattleCard> {
           const SizedBox(height: 8),
           Row(
             children: [
-              Text(
-                '$chPct٪',
-                style: t.labelMedium?.copyWith(
-                    color: _red, fontWeight: FontWeight.w700),
-              ),
+              Text('$chPct٪',
+                  style: t.labelMedium
+                      ?.copyWith(color: _red, fontWeight: FontWeight.w700)),
               const Spacer(),
-              Text('${_b.totalVotes} صوتًا', style: t.bodySmall),
+              Text('${_b.totalVotes} قوة', style: t.bodySmall),
               const Spacer(),
-              Text(
-                '${100 - chPct}٪',
-                style: t.labelMedium?.copyWith(
-                    color: _blue, fontWeight: FontWeight.w700),
-              ),
+              Text('${100 - chPct}٪',
+                  style: t.labelMedium
+                      ?.copyWith(color: _blue, fontWeight: FontWeight.w700)),
             ],
           ),
           if (_b.isFinished) ...[
