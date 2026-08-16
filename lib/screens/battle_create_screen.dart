@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/battle.dart';
 import '../models/post.dart';
+import '../models/user_profile.dart';
 import '../services/battle_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
@@ -12,7 +13,6 @@ import '../widgets/avatar_circle.dart';
 class BattleCreateScreen extends StatefulWidget {
   const BattleCreateScreen({super.key, required this.target});
 
-  /// المنشور المتحدَّى
   final Post target;
 
   @override
@@ -22,13 +22,16 @@ class BattleCreateScreen extends StatefulWidget {
 class _BattleCreateScreenState extends State<BattleCreateScreen> {
   static const _maxLength = 200;
 
+  /// المدد المتاحة بالساعات
+  static const _durations = [1, 3, 6, 12, 24];
+
   final _controller = TextEditingController();
 
   BattleTopic _topic = BattleTopic.general;
   int _hours = 6;
   bool _sending = false;
 
-  BattleRank _rank = BattleRank.rookie;
+  UserProfile? _me;
   int _todayCount = 0;
   bool _loading = true;
 
@@ -51,17 +54,22 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
 
     if (!mounted) return;
     setState(() {
-      _rank = BattleRankInfo.fromPoints(me?.battlePoints ?? 0);
+      _me = me;
       _todayCount = count;
       _loading = false;
     });
   }
 
+  BattleRank get _rank => _me?.rank ?? BattleRank.rookie;
+
+  int get _limit => _me?.dailyBattleLimit ?? 1;
+
   int get _remaining => _maxLength - _controller.text.characters.length;
 
-  bool get _limitReached => _todayCount >= _rank.dailyLimit;
+  bool get _limitReached => _todayCount >= _limit;
 
   bool get _canPickDuration =>
+      (_me?.isTester ?? false) ||
       _rank == BattleRank.ninja ||
       _rank == BattleRank.samurai ||
       _rank == BattleRank.beast;
@@ -97,6 +105,14 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
     }
   }
 
+  static String _durationLabel(int h) => switch (h) {
+        1 => 'ساعة',
+        3 => '٣ ساعات',
+        6 => '٦ ساعات',
+        12 => '١٢ ساعة',
+        _ => '٢٤ ساعة',
+      };
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -123,10 +139,10 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
                           _editor(context),
                           const SizedBox(height: 20),
                           _label(context, 'المجال'),
-                          _topics(context),
+                          _topicsRow(context),
                           const SizedBox(height: 20),
                           _label(context, 'مدة النزال'),
-                          _durations(context),
+                          _durationsRow(context),
                           const SizedBox(height: 20),
                           _rules(context),
                         ],
@@ -207,7 +223,7 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'بلغتَ حدّك اليومي (${_rank.dailyLimit} نزال). ارتقِ لرتبة أعلى لتزيد الحد.',
+              'بلغتَ حدّك اليومي ($_limit نزال). ارتقِ لرتبة أعلى لتزيد الحد.',
               style: Theme.of(context)
                   .textTheme
                   .bodySmall
@@ -309,7 +325,7 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
     );
   }
 
-  Widget _topics(BuildContext context) {
+  Widget _topicsRow(BuildContext context) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -355,7 +371,7 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
     );
   }
 
-  Widget _durations(BuildContext context) {
+  Widget _durationsRow(BuildContext context) {
     if (!_canPickDuration) {
       return Row(
         children: [
@@ -372,32 +388,31 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
       );
     }
 
-    return Row(
-      children: [3, 6, 24].map((h) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _durations.map((h) {
         final active = _hours == h;
 
-        return Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: InkWell(
-            onTap: () => setState(() => _hours = h),
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: active
-                    ? AppColors.brand
-                    : AppColors.border.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                '$h ساعات',
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.6,
-                  fontWeight: FontWeight.w600,
-                  color: active ? AppColors.background : AppColors.text,
-                ),
+        return InkWell(
+          onTap: () => setState(() => _hours = h),
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+            decoration: BoxDecoration(
+              color: active
+                  ? AppColors.brand
+                  : AppColors.border.withOpacity(0.4),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _durationLabel(h),
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.6,
+                fontWeight: FontWeight.w600,
+                color: active ? AppColors.background : AppColors.text,
               ),
             ),
           ),
@@ -444,19 +459,6 @@ class _BattleCreateScreenState extends State<BattleCreateScreen> {
                 style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _label(BuildContext context, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        text,
-        style: Theme.of(context)
-            .textTheme
-            .labelMedium
-            ?.copyWith(fontWeight: FontWeight.w700),
       ),
     );
   }
