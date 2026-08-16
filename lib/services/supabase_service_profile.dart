@@ -184,7 +184,6 @@ extension SupabaseProfileApi on SupabaseService {
 
   // ── الرسائل ──────────────────────────────────────────────
 
-  /// يفتح محادثة مع مستخدم — ينشئها إن لم تكن موجودة
   Future<String> openConversationWith(String otherUserId) async {
     final id = await _db.rpc(
       'get_or_create_conversation',
@@ -251,7 +250,7 @@ extension SupabaseProfileApi on SupabaseService {
         .from('messages')
         .select('id, body, sender_id, created_at')
         .eq('conversation_id', conversationId)
-        .order('created_at');
+        .order('created_at', ascending: true);
 
     return rows
         .map<Message>((r) => Message(
@@ -273,22 +272,28 @@ extension SupabaseProfileApi on SupabaseService {
     });
   }
 
+  /// بث حي للرسائل — مرتّبة من الأقدم للأحدث
   Stream<List<Message>> messageStream(String conversationId) {
     final uid = currentUserId;
     return _db
         .from('messages')
         .stream(primaryKey: ['id'])
         .eq('conversation_id', conversationId)
-        .order('created_at')
-        .map((rows) => rows
-            .map((r) => Message(
-                  id: r['id'].toString(),
-                  body: r['body'] as String? ?? '',
-                  time: SupabaseService.formatClock(
-                      r['created_at'] as String?),
-                  fromMe: r['sender_id'] == uid,
-                ))
-            .toList());
+        .map((rows) {
+          final list = rows.toList()
+            ..sort((a, b) => (a['created_at'] as String)
+                .compareTo(b['created_at'] as String));
+
+          return list
+              .map((r) => Message(
+                    id: r['id'].toString(),
+                    body: r['body'] as String? ?? '',
+                    time: SupabaseService.formatClock(
+                        r['created_at'] as String?),
+                    fromMe: r['sender_id'] == uid,
+                  ))
+              .toList();
+        });
   }
 
   // ── الملف الشخصي ─────────────────────────────────────────
