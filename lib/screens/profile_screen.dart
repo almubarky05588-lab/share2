@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/battle.dart';
 import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../services/supabase_service.dart';
@@ -513,10 +514,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   const Spacer(),
                   if (_isMe) ...[
-                    _circleButton(
-                      icon: Icons.waves,
-                      onTap: _openWaves,
-                    ),
+                    _circleButton(icon: Icons.waves, onTap: _openWaves),
                     const SizedBox(width: 8),
                     _circleButton(
                       icon: Icons.settings_outlined,
@@ -603,7 +601,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         size: 19, color: AppColors.blue),
                   ),
                 ],
-                if (p.rank != BattleRankValue.rookie) ...[
+                if (p.rank != BattleRank.rookie) ...[
                   const SizedBox(width: 8),
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
