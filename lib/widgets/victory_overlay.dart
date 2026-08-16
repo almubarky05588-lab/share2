@@ -2,9 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../models/battle.dart';
+import 'sound_fx.dart';
 
 /// مؤثر الفوز — تاج ينزل مع ومضة ذهبية
 class VictoryOverlay extends StatefulWidget {
@@ -45,27 +45,17 @@ class _VictoryOverlayState extends State<VictoryOverlay>
     duration: const Duration(milliseconds: 900),
   );
 
-  final _player = AudioPlayer();
-
   @override
   void initState() {
     super.initState();
     HapticFeedback.mediumImpact();
-    _playSound();
+    SoundFx.play('assets/victory.mp3');
     _c.forward();
-  }
-
-  Future<void> _playSound() async {
-    try {
-      await _player.setAsset('assets/victory.mp3');
-      await _player.play();
-    } catch (_) {}
   }
 
   @override
   void dispose() {
     _c.dispose();
-    _player.dispose();
     super.dispose();
   }
 
