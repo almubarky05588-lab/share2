@@ -53,30 +53,28 @@ class RankShowcase extends StatefulWidget {
 class _RankShowcaseState extends State<RankShowcase>
     with TickerProviderStateMixin {
   static const _shout = 'assets/jnilsons-kung-fu-fu-464591.mp3';
-  static const _swing =
-      'assets/freesound_community-sword-swings-14592.mp3';
 
-  static const _frames = [
-    'assets/ninja1.png.JPG',
-    'assets/ninja2.png.JPG',
-    'assets/ninja3.png.JPG',
-    'assets/ninja4.png.JPG',
-  ];
+  /// صورة كل رتبة — المفرغة الجديدة للنينجا
+  static const Map<BattleRank, String> _art = {
+    BattleRank.ninja: 'assets/ECECEAAC-14B2-4803-9BCF-F04166BA3EAF.png',
+  };
 
+  /// دخول المشهد
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2200),
+    duration: const Duration(milliseconds: 1800),
   );
 
-  int _frame = 0;
+  /// طفو مستمر بعد الدخول
+  late final AnimationController _idle = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2600),
+  )..repeat(reverse: true);
+
   bool _shouted = false;
-  bool _swung = false;
   bool _done = false;
 
-  bool get _hasFrames =>
-      widget.rank == BattleRank.ninja ||
-      widget.rank == BattleRank.samurai ||
-      widget.rank == BattleRank.beast;
+  String? get _image => _art[widget.rank];
 
   @override
   void initState() {
@@ -92,34 +90,17 @@ class _RankShowcaseState extends State<RankShowcase>
   }
 
   void _tick() {
-    final v = _c.value;
-
-    final f = v < 0.22
-        ? 0
-        : v < 0.48
-            ? 1
-            : v < 0.72
-                ? 2
-                : 3;
-
-    if (f != _frame) setState(() => _frame = f);
-
-    if (!_shouted && v > 0.22 && _hasFrames) {
+    if (!_shouted && _c.value > 0.15 && _image != null) {
       _shouted = true;
       HapticFeedback.heavyImpact();
       SoundFx.play(_shout);
-    }
-
-    if (!_swung && v > 0.50 && _hasFrames) {
-      _swung = true;
-      HapticFeedback.mediumImpact();
-      SoundFx.play(_swing);
     }
   }
 
   @override
   void dispose() {
     _c.dispose();
+    _idle.dispose();
     super.dispose();
   }
 
@@ -132,13 +113,15 @@ class _RankShowcaseState extends State<RankShowcase>
       child: GestureDetector(
         onTap: () => Navigator.of(context).maybePop(),
         child: AnimatedBuilder(
-          animation: _c,
+          animation: Listenable.merge([_c, _idle]),
           builder: (context, _) {
             return Stack(
               alignment: Alignment.center,
               children: [
                 _backdrop(rank),
-                if (_hasFrames) _warrior() else _badgeOnly(rank),
+                _rings(rank),
+                if (_image != null) _speedLines(rank),
+                if (_image != null) _hero() else _badgeOnly(rank),
                 _info(context, rank),
               ],
             );
@@ -148,6 +131,7 @@ class _RankShowcaseState extends State<RankShowcase>
     );
   }
 
+  /// تدرج الخلفية
   Widget _backdrop(BattleRank rank) {
     return Container(
       decoration: BoxDecoration(
@@ -156,22 +140,51 @@ class _RankShowcaseState extends State<RankShowcase>
           end: Alignment.bottomCenter,
           colors: [
             Colors.white,
-            rank.color.withOpacity(0.06),
-            rank.color.withOpacity(0.14),
+            rank.color.withOpacity(0.05),
+            rank.color.withOpacity(0.16),
           ],
         ),
       ),
-      child: Center(
-        child: Container(
-          width: 340,
-          height: 340,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                rank.color.withOpacity(0.16),
-                Colors.transparent,
-              ],
+    );
+  }
+
+  /// حلقات توهج تتنفس خلف البطل
+  Widget _rings(BattleRank rank) {
+    final breath = 1 + _idle.value * 0.06;
+    final appear = Curves.easeOut.transform(_c.value.clamp(0.0, 1.0));
+
+    return Transform.translate(
+      offset: const Offset(0, -60),
+      child: Opacity(
+        opacity: appear,
+        child: Transform.scale(
+          scale: breath,
+          child: Container(
+            width: 330,
+            height: 330,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  rank.color.withOpacity(0.20),
+                  rank.color.withOpacity(0.06),
+                  Colors.transparent,
+                ],
+                stops: const [0.0, 0.55, 1.0],
+              ),
+            ),
+            child: Center(
+              child: Container(
+                width: 250,
+                height: 250,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: rank.color.withOpacity(0.25),
+                    width: 1.4,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -179,25 +192,72 @@ class _RankShowcaseState extends State<RankShowcase>
     );
   }
 
-  Widget _warrior() {
+  /// خطوط سرعة خلف القفزة — تظهر لحظة الدخول ثم تتلاشى
+  Widget _speedLines(BattleRank rank) {
+    final v = _c.value;
+    if (v > 0.55) return const SizedBox.shrink();
+
+    final fade = (1 - v / 0.55).clamp(0.0, 1.0);
+    final w = MediaQuery.of(context).size.width;
+
+    return Opacity(
+      opacity: fade * 0.6,
+      child: Transform.translate(
+        offset: Offset(v * -90, -70),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: List.generate(5, (i) {
+            final len = w * (0.3 + (i % 3) * 0.14);
+            return Container(
+              margin: EdgeInsets.only(bottom: 26 + (i % 2) * 12),
+              width: len,
+              height: 2.4,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(2),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    rank.color.withOpacity(0.55),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
+  /// البطل — قفزة دخول ثم طفو
+  Widget _hero() {
     final v = _c.value;
 
-    final enter = Curves.easeOutCubic.transform((v * 5).clamp(0.0, 1.0));
-    final dx = (1 - enter) * 180;
+    // دخول قوسي من اليمين مع تكبير مرن
+    final enter = Curves.easeOutBack.transform((v * 2.2).clamp(0.0, 1.0));
+    final dx = (1 - enter) * 230;
+    final dy = -60 + (1 - enter) * -70;
 
-    final hit = (v > 0.48 && v < 0.60)
-        ? math.sin((v - 0.48) * math.pi * 18) * 5
+    // هبوط بارتجاجة خفيفة
+    final land = (v > 0.42 && v < 0.56)
+        ? math.sin((v - 0.42) * math.pi * 14) * 4
         : 0.0;
 
+    // طفو مستمر بعد الاستقرار
+    final float = _done ? math.sin(_idle.value * math.pi) * 7 : 0.0;
+
     return Transform.translate(
-      offset: Offset(dx + hit, -50),
-      child: Opacity(
-        opacity: enter,
-        child: Image.asset(
-          _frames[_frame],
-          height: MediaQuery.of(context).size.height * 0.5,
-          fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      offset: Offset(dx, dy + land + float),
+      child: Transform.scale(
+        scale: 0.7 + enter * 0.3,
+        child: Opacity(
+          opacity: enter.clamp(0.0, 1.0),
+          child: Image.asset(
+            _image!,
+            height: MediaQuery.of(context).size.height * 0.42,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          ),
         ),
       ),
     );
