@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'battle.dart';
 
 /// منشور واحد في الفيد — مبني من عرض posts_feed
 class Post {
@@ -23,6 +24,10 @@ class Post {
     this.mediaType,
     this.replyTo,
     this.resharedFrom,
+    this.battlePoints = 0,
+    this.waveId,
+    this.waveRank,
+    this.waveReach = 0,
   });
 
   final String id;
@@ -48,11 +53,36 @@ class Post {
   /// عند الريشير: المنشور الأصلي
   final Post? resharedFrom;
 
+  /// نقاط النزال لصاحب المنشور
+  final int battlePoints;
+
+  /// الموجة — إن كان المنشور مدفوعًا بها
+  final String? waveId;
+  final BattleRank? waveRank;
+  final int waveReach;
+
+  bool get isWave => waveId != null;
   bool get isReshare => resharedFrom != null;
   bool get hasMedia => mediaUrl != null && mediaUrl!.isNotEmpty;
   bool get isVideo => mediaType == 'video';
 
+  BattleRank get rank => BattleRankInfo.fromPoints(battlePoints);
+
   String get initial => authorName.isEmpty ? '؟' : authorName.characters.first;
+
+  /// وصف وصول الموجة
+  String get waveReachLabel {
+    if (waveReach >= 2000000000) return 'كل المستخدمين';
+    if (waveReach >= 1000000) {
+      final v =
+          (waveReach / 1000000).toStringAsFixed(1).replaceAll('.0', '');
+      return '$v مليون';
+    }
+    if (waveReach >= 1000) {
+      return '${(waveReach / 1000).toStringAsFixed(0)} ألف';
+    }
+    return '$waveReach';
+  }
 
   Color get avatarSeed {
     const palette = [
@@ -90,6 +120,10 @@ class Post {
         mediaType: mediaType,
         replyTo: replyTo,
         resharedFrom: resharedFrom,
+        battlePoints: battlePoints,
+        waveId: waveId,
+        waveRank: waveRank,
+        waveReach: waveReach,
       );
 
   /// يبني المنشور من صف عرض posts_feed
@@ -146,6 +180,12 @@ class Post {
       mediaType: row['media_type'] as String?,
       replyTo: row['reply_to']?.toString(),
       resharedFrom: original,
+      battlePoints: (row['battle_points'] as num?)?.toInt() ?? 0,
+      waveId: row['wave_id']?.toString(),
+      waveRank: row['wave_rank'] == null
+          ? null
+          : BattleRankInfo.fromKey(row['wave_rank'] as String?),
+      waveReach: (row['wave_reach'] as num?)?.toInt() ?? 0,
     );
   }
 }
