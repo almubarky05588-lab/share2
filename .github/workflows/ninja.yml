@@ -1,0 +1,79 @@
+name: Ninja Frames
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  frames:
+    name: تفريغ خلفية صور النينجا
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: سحب المستودع
+        uses: actions/checkout@v4
+
+      - name: تثبيت Pillow
+        run: pip install --quiet Pillow
+
+      - name: تفريغ الخلفية
+        run: |
+          python - <<'PY'
+          from PIL import Image
+          import os
+
+          SRC = [
+            'assets/ninja1.png.JPG',
+            'assets/ninja2.png.JPG',
+            'assets/ninja3.png.JPG',
+            'assets/ninja4.png.JPG',
+          ]
+
+          for i, path in enumerate(SRC, start=1):
+              if not os.path.exists(path):
+                  print(f'مفقود: {path}')
+                  continue
+
+              img = Image.open(path).convert('RGBA')
+              w, h = img.size
+              px = img.load()
+
+              # إزالة الأبيض والرمادي الفاتح جدًا
+              for y in range(h):
+                  for x in range(w):
+                      r, g, b, a = px[x, y]
+                      if r > 238 and g > 238 and b > 238:
+                          px[x, y] = (r, g, b, 0)
+                      elif r > 218 and g > 218 and b > 218:
+                          # حواف ناعمة
+                          fade = int((255 - min(r, g, b)) * 6)
+                          px[x, y] = (r, g, b, min(fade, 255))
+
+              # قصّ الفراغ الزائد
+              box = img.getbbox()
+              if box:
+                  img = img.crop(box)
+
+              # تصغير للعرض على الجوال
+              maxw = 700
+              if img.width > maxw:
+                  ratio = maxw / img.width
+                  img = img.resize(
+                      (maxw, int(img.height * ratio)),
+                      Image.LANCZOS,
+                  )
+
+              out = f'assets/ninja_{i}.png'
+              img.save(out, 'PNG', optimize=True)
+              print(f'{out} — {img.size}')
+          PY
+
+      - name: حفظ الصور
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A assets/ninja_*.png
+          git diff --staged --quiet || git commit -m "تفريغ خلفية صور النينجا"
+          git push
