@@ -7,7 +7,7 @@ import '../models/battle.dart';
 import '../models/jump.dart';
 import 'supabase_service.dart';
 
-/// كل ما يخصّ النزال والقفزة والسوق والتحكيم
+/// كل ما يخصّ النزال والموجة والسوق والتحكيم
 class BattleService {
   BattleService._();
   static final instance = BattleService._();
@@ -23,7 +23,6 @@ class BattleService {
 
   // ── النزال ───────────────────────────────────────────────
 
-  /// إنشاء تحدٍّ
   Future<void> challenge({
     required String opponentId,
     required String opponentText,
@@ -47,19 +46,16 @@ class BattleService {
     });
   }
 
-  /// قبول التحدي
   Future<void> accept(String battleId) async {
     await _db.rpc('accept_battle', params: {'battle_id': battleId});
   }
 
-  /// رفض التحدي
   Future<void> decline(String battleId) async {
     await _db
         .from('battles')
         .update({'status': 'declined'}).eq('id', battleId);
   }
 
-  /// إنهاء النزالات المنتهية — تُستدعى عند فتح الشاشة
   Future<void> finishDue() async {
     try {
       await _db.rpc('finish_due_battles');
@@ -93,7 +89,6 @@ class BattleService {
         .toList();
   }
 
-  /// النزالات النشطة — الأقرب انتهاءً أولًا
   Future<List<Battle>> fetchActive({BattleTopic? topic}) async {
     await finishDue();
 
@@ -104,7 +99,6 @@ class BattleService {
     return _build(rows.cast<Map<String, dynamic>>());
   }
 
-  /// النزالات المتقاربة — الأكثر إثارة
   Future<List<Battle>> fetchHot() async {
     await finishDue();
 
@@ -127,7 +121,6 @@ class BattleService {
     return list.take(30).toList();
   }
 
-  /// نزال واحد للتايم لاين — الأقل أصواتًا أولًا
   Future<Battle?> fetchForTimeline() async {
     await finishDue();
 
@@ -153,7 +146,6 @@ class BattleService {
     return fresh.isEmpty ? null : fresh.first;
   }
 
-  /// التحديات الواردة لي
   Future<List<Battle>> fetchPending() async {
     final uid = _uid;
     if (uid == null) return [];
@@ -168,7 +160,6 @@ class BattleService {
     return _build(rows.cast<Map<String, dynamic>>());
   }
 
-  /// نزالات مستخدم
   Future<List<Battle>> fetchUserBattles(String userId) async {
     await finishDue();
 
@@ -183,7 +174,6 @@ class BattleService {
     return _build(rows.cast<Map<String, dynamic>>());
   }
 
-  /// التصويت
   Future<void> vote(String battleId, String side) async {
     final uid = _uid;
     if (uid == null) throw StateError('غير مسجّل الدخول');
@@ -195,7 +185,6 @@ class BattleService {
     });
   }
 
-  /// بث حي للأصوات
   RealtimeChannel watchVotes(void Function() onChange) {
     return _db
         .channel('public:battle_votes')
@@ -210,7 +199,6 @@ class BattleService {
 
   Future<void> unwatch(RealtimeChannel c) => _db.removeChannel(c);
 
-  /// كم نزالًا بدأت اليوم
   Future<int> todayBattlesCount() async {
     final uid = _uid;
     if (uid == null) return 0;
@@ -231,7 +219,7 @@ class BattleService {
     }
   }
 
-  // ── القفزة ───────────────────────────────────────────────
+  // ── الموجة ───────────────────────────────────────────────
 
   Future<List<Jump>> fetchMyJumps() async {
     final uid = _uid;
@@ -246,7 +234,41 @@ class BattleService {
     return rows.map<Jump>((r) => Jump.fromRow(r)).toList();
   }
 
-  /// استخدام القفزة على منشور
+  /// أول موجة متاحة — للنشر
+  Future<Jump?> firstAvailableWave() async {
+    final uid = _uid;
+    if (uid == null) return null;
+
+    final row = await _db
+        .from('jumps')
+        .select('*')
+        .eq('owner_id', uid)
+        .eq('status', 'available')
+        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+        .order('expires_at', ascending: true)
+        .limit(1)
+        .maybeSingle();
+
+    return row == null ? null : Jump.fromRow(row);
+  }
+
+  /// نشر منشور بموجة
+  Future<String> publishWithWave({
+    required String waveId,
+    required String body,
+    String? mediaUrl,
+    String? mediaType,
+  }) async {
+    final id = await _db.rpc('publish_with_wave', params: {
+      'wave_id': waveId,
+      'post_body': body,
+      'media_url': mediaUrl,
+      'media_type': mediaType,
+    });
+
+    return id.toString();
+  }
+
   Future<void> useJump(String jumpId, String postId) async {
     await _db.from('jumps').update({
       'post_id': postId,
@@ -256,7 +278,6 @@ class BattleService {
     }).eq('id', jumpId);
   }
 
-  /// إهداء القفزة
   Future<void> giftJump(String jumpId, String toUserId) async {
     final uid = _uid;
     if (uid == null) throw StateError('غير مسجّل الدخول');
@@ -319,7 +340,6 @@ class BattleService {
         .toList();
   }
 
-  /// بدء تحويل بيع
   Future<void> startSaleTransfer({
     required String jumpId,
     required String buyerId,
@@ -335,7 +355,6 @@ class BattleService {
     });
   }
 
-  /// التحويلات الواردة لي
   Future<List<Map<String, dynamic>>> fetchIncomingTransfers() async {
     final uid = _uid;
     if (uid == null) return [];
@@ -390,7 +409,6 @@ class BattleService {
     return row['id'].toString();
   }
 
-  /// رفع دليل — حاوية خاصة
   Future<void> uploadEvidence({
     required String disputeId,
     required File file,
