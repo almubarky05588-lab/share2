@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import 'battle.dart';
 
 /// بيانات صفحة المستخدم
 class UserProfile {
@@ -22,6 +23,9 @@ class UserProfile {
     this.isFollowing = false,
     this.isBlocked = false,
     this.blockedMe = false,
+    this.battlePoints = 0,
+    this.battlesCount = 0,
+    this.battlesWon = 0,
   });
 
   final String id;
@@ -32,22 +36,22 @@ class UserProfile {
   final int following;
   final int posts;
   final String? avatarUrl;
-
-  /// صورة الغلاف
   final String? coverUrl;
-
   final String? location;
   final String? website;
   final String? joined;
   final bool verified;
   final bool followsYou;
   final bool isFollowing;
-
-  /// حظرتُه أنا
   final bool isBlocked;
-
-  /// حظرني هو
   final bool blockedMe;
+
+  /// نقاط النزال
+  final int battlePoints;
+  final int battlesCount;
+  final int battlesWon;
+
+  BattleRank get rank => BattleRankInfo.fromPoints(battlePoints);
 
   String get initial => name.isEmpty ? '؟' : name.characters.first;
 
@@ -99,6 +103,7 @@ class UserProfile {
     bool? isBlocked,
     bool? blockedMe,
     int? followers,
+    int? battlePoints,
   }) =>
       UserProfile(
         id: id,
@@ -118,6 +123,9 @@ class UserProfile {
         isFollowing: isFollowing ?? this.isFollowing,
         isBlocked: isBlocked ?? this.isBlocked,
         blockedMe: blockedMe ?? this.blockedMe,
+        battlePoints: battlePoints ?? this.battlePoints,
+        battlesCount: battlesCount,
+        battlesWon: battlesWon,
       );
 
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
@@ -138,5 +146,8 @@ class UserProfile {
         isFollowing: map['is_following'] as bool? ?? false,
         isBlocked: map['is_blocked'] as bool? ?? false,
         blockedMe: map['blocked_me'] as bool? ?? false,
+        battlePoints: (map['battle_points'] as num?)?.toInt() ?? 0,
+        battlesCount: (map['battles_count'] as num?)?.toInt() ?? 0,
+        battlesWon: (map['battles_won'] as num?)?.toInt() ?? 0,
       );
 }
