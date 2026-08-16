@@ -56,7 +56,7 @@ class _RankShowcaseState extends State<RankShowcase>
 
   /// صورة كل رتبة — المفرغة الجديدة للنينجا
   static const Map<BattleRank, String> _art = {
-    BattleRank.ninja: 'assets/ECECEAAC-14B2-4803-9BCF-F04166BA3EAF.png',
+    BattleRank.ninja: 'assets/IMG_7470.png',
   };
 
   /// دخول المشهد
