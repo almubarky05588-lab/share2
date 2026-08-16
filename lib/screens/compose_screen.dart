@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/jump.dart';
 import '../models/post.dart';
+import '../models/spoil.dart';
 import '../models/user_profile.dart';
 import '../services/battle_service.dart';
 import '../services/supabase_service.dart';
@@ -27,6 +28,7 @@ class ComposeScreen extends StatefulWidget {
 
 class _ComposeScreenState extends State<ComposeScreen> {
   static const _maxLength = 280;
+  static const _gold = Color(0xFFD4A017);
 
   late final RichComposeController _controller =
       RichComposeController(text: widget.initialText ?? '');
@@ -38,9 +40,12 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   UserProfile? _me;
 
-  /// الموجة المتاحة — إن وُجدت
   Jump? _wave;
   bool _useWave = false;
+
+  /// الغنائم المتاحة والمختارة
+  List<Spoil> _spoils = const [];
+  final Set<String> _picked = {};
 
   List<UserProfile> _suggestions = const [];
   Timer? _debounce;
@@ -78,8 +83,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
         final users = await SupabaseService.instance.searchUsers(q);
         if (!mounted) return;
         setState(() {
-          _suggestions =
-              users.where((u) => u.id != me).take(6).toList();
+          _suggestions = users.where((u) => u.id != me).take(6).toList();
         });
       } catch (_) {}
     });
@@ -87,23 +91,50 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
   Future<void> _loadMe() async {
     final me = await SupabaseService.instance.fetchMyProfile();
-    final wave = _isReply
-        ? null
-        : await BattleService.instance.firstAvailableWave();
+
+    Jump? wave;
+    List<Spoil> spoils = const [];
+
+    if (!_isReply) {
+      wave = await BattleService.instance.firstAvailableWave();
+      spoils = await BattleService.instance.availableSpoils();
+    }
 
     if (!mounted) return;
     setState(() {
       _me = me;
       _wave = wave;
+      _spoils = spoils;
     });
   }
 
   int get _remaining => _maxLength - _controller.text.characters.length;
 
+  int get _pickedReach => _spoils
+      .where((s) => _picked.contains(s.id))
+      .fold(0, (sum, s) => sum + s.reach);
+
   bool get _canSend =>
       (_controller.text.trim().isNotEmpty || _media != null) &&
       _remaining >= 0 &&
       !_sending;
+
+  void _togglePick(Spoil s) {
+    setState(() {
+      if (_picked.contains(s.id)) {
+        _picked.remove(s.id);
+      } else {
+        if (_picked.length >= 3) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('حد أقصى ٣ غنائم')),
+          );
+          return;
+        }
+        _picked.add(s.id);
+        _useWave = false;
+      }
+    });
+  }
 
   Future<void> _pickImage() async {
     final x = await _picker.pickImage(
@@ -157,7 +188,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
         type = r.type;
       }
 
-      if (_useWave && _wave != null) {
+      if (_picked.isNotEmpty) {
+        await BattleService.instance.publishWithSpoils(
+          spoilIds: _picked.toList(),
+          body: _controller.text.trim(),
+          mediaUrl: url,
+          mediaType: type,
+        );
+      } else if (_useWave && _wave != null) {
         await BattleService.instance.publishWithWave(
           waveId: _wave!.id,
           body: _controller.text.trim(),
@@ -203,7 +241,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   _editor(context),
                   if (_suggestions.isNotEmpty) _mentionList(context),
                   if (_media != null) _preview(),
-                  if (_wave != null) _waveToggle(context),
+                  if (_spoils.isNotEmpty) _spoilsBlock(context),
+                  if (_wave != null && _picked.isEmpty) _waveToggle(context),
                 ],
               ),
             ),
@@ -215,6 +254,20 @@ class _ComposeScreenState extends State<ComposeScreen> {
   }
 
   Widget _header(BuildContext context) {
+    final label = _isReply
+        ? 'رد'
+        : _picked.isNotEmpty
+            ? '⚔️ انشر بغنيمة'
+            : _useWave
+                ? '🌊 انشر بموجة'
+                : 'share';
+
+    final color = _picked.isNotEmpty
+        ? _gold
+        : _useWave
+            ? const Color(0xFF2F6BFF)
+            : AppColors.brand;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -234,14 +287,14 @@ class _ComposeScreenState extends State<ComposeScreen> {
           Opacity(
             opacity: _canSend ? 1 : 0.45,
             child: Material(
-              color: _useWave ? const Color(0xFF2F6BFF) : AppColors.brand,
+              color: color,
               borderRadius: BorderRadius.circular(19),
               child: InkWell(
                 borderRadius: BorderRadius.circular(19),
                 onTap: _canSend ? _submit : null,
                 child: Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   child: _sending
                       ? const SizedBox(
                           width: 18,
@@ -252,11 +305,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                           ),
                         )
                       : Text(
-                          _isReply
-                              ? 'رد'
-                              : _useWave
-                                  ? '🌊 انشر بموجة'
-                                  : 'share',
+                          label,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -273,7 +322,108 @@ class _ComposeScreenState extends State<ComposeScreen> {
     );
   }
 
-  /// مفتاح استخدام الموجة
+  /// اختيار الغنائم
+  Widget _spoilsBlock(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('⚔️', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Text(
+                  'انشر بغنيمة',
+                  style: t.titleMedium?.copyWith(fontSize: 14, color: _gold),
+                ),
+                const Spacer(),
+                if (_picked.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _gold.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$_pickedReach مشاهدة',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.6,
+                        fontWeight: FontWeight.w700,
+                        color: _gold,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ..._spoils.map((s) => _spoilRow(context, s)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _spoilRow(BuildContext context, Spoil s) {
+    final t = Theme.of(context).textTheme;
+    final on = _picked.contains(s.id);
+
+    return InkWell(
+      onTap: () => _togglePick(s),
+      borderRadius: BorderRadius.circular(13),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: on ? _gold.withOpacity(0.1) : AppColors.border.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: on ? _gold : Colors.transparent,
+            width: 1.4,
+          ),
+        ),
+        child: Row(
+          children: [
+            AvatarCircle(
+              initial: s.loserInitial,
+              seed: s.loserSeed,
+              imageUrl: s.loserAvatar,
+              size: 32,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'جمهور ${s.loserName}',
+                    style: t.titleMedium?.copyWith(fontSize: 13.5),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${s.reach} مشاهدة · ${s.timeLeftLabel}',
+                    style: t.bodySmall?.copyWith(fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              on ? Icons.check_circle : Icons.circle_outlined,
+              size: 21,
+              color: on ? _gold : AppColors.textMuted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _waveToggle(BuildContext context) {
     final w = _wave!;
 
@@ -302,13 +452,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
             ),
             child: Row(
               children: [
-                Text(
-                  '🌊',
-                  style: TextStyle(
-                    fontSize: 22,
-                    color: _useWave ? Colors.white : null,
-                  ),
-                ),
+                const Text('🌊', style: TextStyle(fontSize: 22)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -319,14 +463,13 @@ class _ComposeScreenState extends State<ComposeScreen> {
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: _useWave
-                              ? AppColors.background
-                              : AppColors.text,
+                          color:
+                              _useWave ? AppColors.background : AppColors.text,
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        'يصل لـ${w.reachLabel} · تنتهي خلال ${w.daysLeft} يومًا',
+                        'يصل لـ${w.reachLabel} · ${w.daysLeft} يومًا',
                         style: TextStyle(
                           fontSize: 12,
                           height: 1.6,
@@ -395,8 +538,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                   ),
                   if (p.body.isNotEmpty) ...[
                     const SizedBox(height: 5),
-                    Text(p.body,
-                        style: t.bodyMedium?.copyWith(fontSize: 14)),
+                    Text(p.body, style: t.bodyMedium?.copyWith(fontSize: 14)),
                   ],
                   const SizedBox(height: 10),
                   Text.rich(
@@ -406,8 +548,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
                         const TextSpan(text: 'ردًّا على '),
                         TextSpan(
                           text: atHandle(p.handle),
-                          style:
-                              t.bodySmall?.copyWith(color: AppColors.brand),
+                          style: t.bodySmall?.copyWith(color: AppColors.brand),
                         ),
                       ],
                     ),
@@ -509,8 +650,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
             child: Directionality(
               textDirection: TextDirection.rtl,
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 9),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
                 child: Row(
                   children: [
                     AvatarCircle(
