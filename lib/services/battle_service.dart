@@ -8,7 +8,7 @@ import '../models/jump.dart';
 import '../models/spoil.dart';
 import 'supabase_service.dart';
 
-/// النزال · الغنائم · الموجة · السوق · التحكيم
+/// النزال · الحجج · الغنائم · الموجة · السوق · التحكيم
 class BattleService {
   BattleService._();
   static final instance = BattleService._();
@@ -185,7 +185,6 @@ class BattleService {
     });
   }
 
-  /// تغيير الصوت — مرة واحدة
   Future<void> changeVote(String battleId, String newSide) async {
     await _db.rpc('change_vote', params: {
       'b_id': battleId,
@@ -193,7 +192,6 @@ class BattleService {
     });
   }
 
-  /// عدد المصوّتين الفعلي
   Future<int> votersCount(String battleId) async {
     try {
       return await _db
@@ -205,7 +203,6 @@ class BattleService {
     }
   }
 
-  /// قوة ضربتي
   Future<int> myStrikePower() async {
     final me = await SupabaseService.instance.fetchMyProfile();
     final p = me?.battlePoints ?? 0;
@@ -252,7 +249,7 @@ class BattleService {
     }
   }
 
-  // ── الحجج والردود ────────────────────────────────────────
+  // ── الحجج ────────────────────────────────────────────────
 
   Future<List<BattleArgument>> fetchArguments(String battleId) async {
     final rows = await _db
@@ -269,7 +266,6 @@ class BattleService {
         .toList();
   }
 
-  /// عدد ردودي في نزال
   Future<int> myArgumentsCount(String battleId) async {
     final uid = _uid;
     if (uid == null) return 0;
@@ -285,12 +281,31 @@ class BattleService {
     }
   }
 
+  /// رفع ملف لوسائط النزال
+  Future<String> uploadBattleMedia(File file) async {
+    final uid = _uid;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    final mime = lookupMimeType(file.path) ?? 'application/octet-stream';
+    final ext = file.path.split('.').last.toLowerCase();
+    final path = '$uid/${DateTime.now().microsecondsSinceEpoch}.$ext';
+
+    await _db.storage.from('battle-media').upload(
+          path,
+          file,
+          fileOptions: FileOptions(contentType: mime, upsert: true),
+        );
+
+    return _db.storage.from('battle-media').getPublicUrl(path);
+  }
+
   Future<void> addArgument({
     required String battleId,
     required String side,
     required String body,
-    String? sourceUrl,
-    String? mediaUrl,
+    List<String> sources = const [],
+    List<String> images = const [],
+    String? videoUrl,
   }) async {
     final uid = _uid;
     if (uid == null) throw StateError('غير مسجّل الدخول');
@@ -300,8 +315,9 @@ class BattleService {
       'author_id': uid,
       'side': side,
       'body': body,
-      'source_url': sourceUrl,
-      'media_url': mediaUrl,
+      'sources': sources,
+      'images': images,
+      'video_url': videoUrl,
     });
   }
 
@@ -335,7 +351,6 @@ class BattleService {
     return rows.map<Spoil>((r) => Spoil.fromRow(r)).toList();
   }
 
-  /// الغنائم المتاحة للنشر
   Future<List<Spoil>> availableSpoils() async {
     final uid = _uid;
     if (uid == null) return [];
@@ -354,7 +369,6 @@ class BattleService {
     return rows.map<Spoil>((r) => Spoil.fromRow(r)).toList();
   }
 
-  /// نشر منشور بغنائم — حتى ٣
   Future<String> publishWithSpoils({
     required List<String> spoilIds,
     required String body,
