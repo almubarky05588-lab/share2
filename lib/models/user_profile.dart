@@ -26,6 +26,7 @@ class UserProfile {
     this.battlePoints = 0,
     this.battlesCount = 0,
     this.battlesWon = 0,
+    this.isTester = false,
   });
 
   final String id;
@@ -51,7 +52,13 @@ class UserProfile {
   final int battlesCount;
   final int battlesWon;
 
+  /// حساب اختبار — بلا حد يومي
+  final bool isTester;
+
   BattleRank get rank => BattleRankInfo.fromPoints(battlePoints);
+
+  /// الحد اليومي للنزالات
+  int get dailyBattleLimit => isTester ? 999 : rank.dailyLimit;
 
   String get initial => name.isEmpty ? '؟' : name.characters.first;
 
@@ -126,6 +133,7 @@ class UserProfile {
         battlePoints: battlePoints ?? this.battlePoints,
         battlesCount: battlesCount,
         battlesWon: battlesWon,
+        isTester: isTester,
       );
 
   factory UserProfile.fromMap(Map<String, dynamic> map) => UserProfile(
@@ -149,5 +157,6 @@ class UserProfile {
         battlePoints: (map['battle_points'] as num?)?.toInt() ?? 0,
         battlesCount: (map['battles_count'] as num?)?.toInt() ?? 0,
         battlesWon: (map['battles_won'] as num?)?.toInt() ?? 0,
+        isTester: map['is_tester'] as bool? ?? false,
       );
 }
