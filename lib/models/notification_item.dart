@@ -9,6 +9,9 @@ enum NotificationType {
   follow,
   reshare,
   like,
+  battleChallenge,
+  battleWon,
+  battleLost,
 }
 
 /// عنصر واحد في شاشة المنشن والإشعارات
@@ -32,24 +35,22 @@ class NotificationItem {
   final String actorName;
   final String handle;
   final String timeAgo;
-
-  /// معرّف المنشور المرتبط
   final String? postId;
-
-  /// معرّف صاحب الإشعار
   final String? actorId;
-
   final String? avatarUrl;
   final String? preview;
   final bool verified;
-
-  /// لم يُقرأ بعد
   final bool unread;
 
   bool get isFollow => type == NotificationType.follow;
 
   bool get isMention =>
       type == NotificationType.mention || type == NotificationType.reply;
+
+  bool get isBattle =>
+      type == NotificationType.battleChallenge ||
+      type == NotificationType.battleWon ||
+      type == NotificationType.battleLost;
 
   String get actionLabel {
     switch (type) {
@@ -63,6 +64,12 @@ class NotificationItem {
         return 'أعاد نشر منشورك';
       case NotificationType.like:
         return 'أعجب بمنشورك';
+      case NotificationType.battleChallenge:
+        return 'يتحداك في نزال ⚔️';
+      case NotificationType.battleWon:
+        return 'فزتَ بالنزال ضده 🏆';
+      case NotificationType.battleLost:
+        return 'فاز عليك في النزال';
     }
   }
 
@@ -78,6 +85,12 @@ class NotificationItem {
         return Icons.repeat;
       case NotificationType.like:
         return Icons.favorite;
+      case NotificationType.battleChallenge:
+        return Icons.bolt;
+      case NotificationType.battleWon:
+        return Icons.emoji_events;
+      case NotificationType.battleLost:
+        return Icons.shield_outlined;
     }
   }
 
@@ -92,6 +105,12 @@ class NotificationItem {
         return AppColors.reshare;
       case NotificationType.like:
         return AppColors.like;
+      case NotificationType.battleChallenge:
+        return AppColors.brand;
+      case NotificationType.battleWon:
+        return const Color(0xFFD4A017);
+      case NotificationType.battleLost:
+        return AppColors.textMuted;
     }
   }
 
@@ -107,7 +126,6 @@ class NotificationItem {
     return palette[handle.hashCode.abs() % palette.length];
   }
 
-  /// يبني الإشعار من صف عرض notifications_feed
   factory NotificationItem.fromRow(
     Map<String, dynamic> row, {
     required String Function(String?) formatTime,
@@ -120,6 +138,9 @@ class NotificationItem {
       'reshare' => NotificationType.reshare,
       'reply' => NotificationType.reply,
       'follow' => NotificationType.follow,
+      'battle_challenge' => NotificationType.battleChallenge,
+      'battle_won' => NotificationType.battleWon,
+      'battle_lost' => NotificationType.battleLost,
       _ => NotificationType.mention,
     };
 
