@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/user_profile.dart';
+import '../services/push_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
@@ -295,6 +296,52 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  /// تشخيص الإشعارات — يعرض الحالة ويحاول التسجيل من جديد
+  Future<void> _pushDiagnose() async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: CircularProgressIndicator(color: AppColors.brand),
+      ),
+    );
+
+    await PushService.instance.registerDevice();
+    if (!mounted) return;
+    Navigator.of(context).pop();
+
+    final s = PushService.instance.status;
+    final tk = PushService.instance.lastToken;
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حالة الإشعارات'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectableText(s, style: const TextStyle(fontSize: 14)),
+            if (tk != null) ...[
+              const SizedBox(height: 12),
+              const Text('التوكن:', style: TextStyle(fontSize: 12.5)),
+              SelectableText(
+                tk.length > 24 ? '${tk.substring(0, 24)}…' : tk,
+                style: const TextStyle(fontSize: 11.5),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('حسنًا'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _signOut() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -317,6 +364,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (ok != true) return;
 
+    await PushService.instance.unregisterDevice();
     await SupabaseService.instance.signOut();
     if (!mounted) return;
     Navigator.of(context).pop(true);
@@ -419,6 +467,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         icon: Icons.block,
                         label: 'الحسابات المحظورة',
                         onTap: _openBlocked,
+                      ),
+                      const Divider(color: AppColors.border),
+                      _rowItem(
+                        context,
+                        icon: Icons.notifications_active_outlined,
+                        label: 'فحص الإشعارات',
+                        onTap: _pushDiagnose,
                       ),
                       const Divider(color: AppColors.border),
                       _rowItem(
