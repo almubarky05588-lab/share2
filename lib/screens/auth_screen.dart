@@ -506,4 +506,34 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
     );
   }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String hint,
+    bool obscure = false,
+    TextInputType? keyboardType,
+    TextDirection textDirection = TextDirection.rtl,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.border.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        keyboardType: keyboardType,
+        textDirection: textDirection,
+        textAlign: TextAlign.right,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 15),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+          hintText: hint,
+          hintStyle: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+    );
+  }
 }
