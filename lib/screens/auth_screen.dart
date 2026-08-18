@@ -22,9 +22,11 @@ class AuthScreen extends StatefulWidget {
 }
 
 class _AuthScreenState extends State<AuthScreen> {
-  /// معرّفات قوقل — تُعبّأ بعد تجهيز Google Cloud
-  static const _googleWebClientId = '';
-  static const _googleIosClientId = '';
+  /// معرّفا قوقل — من Google Cloud
+  static const _googleWebClientId =
+      '349888852438-tkks5s0pflj14os58i0qd89qf0dftgpq.apps.googleusercontent.com';
+  static const _googleIosClientId =
+      '349888852438-eq7nm9af5r56g65juu1c6i02p93ev4j2.apps.googleusercontent.com';
 
   bool _isSignUp = false;
 
