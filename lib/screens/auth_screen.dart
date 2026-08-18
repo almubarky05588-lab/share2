@@ -1,9 +1,11 @@
 import 'dart:convert';
-import 'dart:math';
+import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -25,11 +27,18 @@ class _AuthScreenState extends State<AuthScreen> {
   static const _googleIosClientId = '';
 
   bool _isSignUp = false;
-  bool _busy = false;
+
+  /// أي زر مشغول الآن: email | apple | google | profile
+  String? _busyOf;
+  bool get _busy => _busyOf != null;
+
   String? _error;
 
-  /// دخل بآبل/قوقل أول مرة — يحتاج اسمًا ومعرّفًا
+  /// دخل بآبل/قوقل أول مرة — يحتاج تعريفًا
   bool _needsProfile = false;
+
+  File? _avatar;
+  final _picker = ImagePicker();
 
   final _email = TextEditingController();
   final _password = TextEditingController();
@@ -51,12 +60,19 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// بعد دخول آبل/قوقل: إن وُجد الملف ندخل، وإلا نطلب الاسم والمعرّف
+  /// هل الملف تم إنشاؤه تلقائيًا ولم يُعرّفه صاحبه بعد؟
+  bool _isPlaceholder(dynamic p) {
+    final name = (p?.name as String?) ?? '';
+    final handle = (p?.handle as String?) ?? '';
+    return name == 'مستخدم جديد' || handle.startsWith('user_');
+  }
+
+  /// بعد دخول آبل/قوقل: ملف حقيقي ندخل، وإلا شاشة التعريف
   Future<void> _afterOAuth({String? suggestedName}) async {
     final me = await SupabaseService.instance.fetchMyProfile();
     if (!mounted) return;
 
-    if (me != null) {
+    if (me != null && !_isPlaceholder(me)) {
       _go();
       return;
     }
@@ -70,7 +86,17 @@ class _AuthScreenState extends State<AuthScreen> {
     });
   }
 
-  /// إنشاء ملف المستخدم بعد دخول آبل/قوقل
+  Future<void> _pickAvatar() async {
+    final x = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      imageQuality: 88,
+    );
+    if (x == null) return;
+    setState(() => _avatar = File(x.path));
+  }
+
+  /// حفظ التعريف: اسم + معرّف + صورة اختيارية
   Future<void> _completeProfile() async {
     final name = _name.text.trim();
     final handle =
@@ -82,7 +108,7 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     setState(() {
-      _busy = true;
+      _busyOf = 'profile';
       _error = null;
     });
 
@@ -90,11 +116,19 @@ class _AuthScreenState extends State<AuthScreen> {
       final client = Supabase.instance.client;
       final uid = client.auth.currentUser!.id;
 
-      await client.from('profiles').insert({
+      await client.from('profiles').upsert({
         'id': uid,
         'name': name,
         'handle': handle,
       });
+
+      if (_avatar != null) {
+        try {
+          await SupabaseService.instance.uploadAvatar(_avatar!);
+        } catch (_) {
+          // الصورة اختيارية — لا نوقف الدخول لأجلها
+        }
+      }
 
       if (!mounted) return;
       _go();
@@ -105,14 +139,14 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (_) {
       setState(() => _error = 'تعذّر إنشاء الملف، حاول مرة أخرى');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyOf = null);
     }
   }
 
   String _nonce([int length = 32]) {
     const chars =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._';
-    final random = Random.secure();
+    final random = math.Random.secure();
     return List.generate(
         length, (_) => chars[random.nextInt(chars.length)]).join();
   }
@@ -120,7 +154,7 @@ class _AuthScreenState extends State<AuthScreen> {
   /// الدخول بحساب آبل
   Future<void> _appleSignIn() async {
     setState(() {
-      _busy = true;
+      _busyOf = 'apple';
       _error = null;
     });
 
@@ -165,7 +199,7 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (_) {
       setState(() => _error = 'تعذّر الدخول بآبل، حاول مرة أخرى');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyOf = null);
     }
   }
 
@@ -179,7 +213,7 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     setState(() {
-      _busy = true;
+      _busyOf = 'google';
       _error = null;
     });
 
@@ -192,7 +226,7 @@ class _AuthScreenState extends State<AuthScreen> {
       final user = await googleSignIn.signIn();
       if (user == null) {
         // المستخدم أغلق النافذة
-        setState(() => _busy = false);
+        setState(() => _busyOf = null);
         return;
       }
 
@@ -217,7 +251,7 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (_) {
       setState(() => _error = 'تعذّر الدخول بقوقل، حاول مرة أخرى');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyOf = null);
     }
   }
 
@@ -235,7 +269,7 @@ class _AuthScreenState extends State<AuthScreen> {
     }
 
     setState(() {
-      _busy = true;
+      _busyOf = 'email';
       _error = null;
     });
 
@@ -261,7 +295,7 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (e) {
       setState(() => _error = 'تعذّر إتمام العملية، حاول مرة أخرى');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _busyOf = null);
     }
   }
 
@@ -278,30 +312,32 @@ class _AuthScreenState extends State<AuthScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: Container(
-                    width: 74,
-                    height: 74,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: AppColors.brand,
-                      borderRadius: BorderRadius.circular(22),
-                    ),
-                    child: const Text(
-                      'S',
-                      style: TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.background,
+                if (!_needsProfile) ...[
+                  Center(
+                    child: Container(
+                      width: 74,
+                      height: 74,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.brand,
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: const Text(
+                        'S',
+                        style: TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.background,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 18),
+                  const SizedBox(height: 18),
+                ],
                 Center(
                   child: Text(
                     _needsProfile
-                        ? 'خطوة أخيرة — عرّفنا عليك'
+                        ? 'أهلًا بك! عرّفنا عليك'
                         : _isSignUp
                             ? 'حساب جديد في شارِك'
                             : 'أهلًا بك في شارِك',
@@ -313,6 +349,46 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 const SizedBox(height: 26),
                 if (_needsProfile) ...[
+                  // صورة شخصية اختيارية
+                  Center(
+                    child: GestureDetector(
+                      onTap: _busy ? null : _pickAvatar,
+                      child: Stack(
+                        alignment: Alignment.bottomLeft,
+                        children: [
+                          Container(
+                            width: 96,
+                            height: 96,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.border.withOpacity(0.5),
+                              image: _avatar == null
+                                  ? null
+                                  : DecorationImage(
+                                      image: FileImage(_avatar!),
+                                      fit: BoxFit.cover,
+                                    ),
+                            ),
+                            child: _avatar == null
+                                ? const Icon(Icons.person,
+                                    size: 44, color: AppColors.textMuted)
+                                : null,
+                          ),
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.brand,
+                            ),
+                            child: const Icon(Icons.camera_alt,
+                                size: 16, color: AppColors.background),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
                   _field(controller: _name, hint: 'الاسم'),
                   const SizedBox(height: 12),
                   _field(
@@ -330,7 +406,8 @@ class _AuthScreenState extends State<AuthScreen> {
                   ],
                   const SizedBox(height: 22),
                   _primaryButton(
-                    label: 'إكمال الحساب',
+                    label: 'ابدأ المشاركة',
+                    busy: _busyOf == 'profile',
                     onTap: _completeProfile,
                   ),
                 ] else ...[
@@ -368,6 +445,7 @@ class _AuthScreenState extends State<AuthScreen> {
                   const SizedBox(height: 22),
                   _primaryButton(
                     label: _isSignUp ? 'إنشاء الحساب' : 'دخول',
+                    busy: _busyOf == 'email',
                     onTap: _submit,
                   ),
                   const SizedBox(height: 18),
@@ -389,18 +467,21 @@ class _AuthScreenState extends State<AuthScreen> {
                   const SizedBox(height: 18),
                   _oauthButton(
                     label: 'الدخول بحساب آبل',
-                    icon: Icons.apple,
+                    leading: const Icon(Icons.apple,
+                        size: 22, color: AppColors.background),
                     background: AppColors.text,
                     foreground: AppColors.background,
+                    busy: _busyOf == 'apple',
                     onTap: _appleSignIn,
                   ),
                   const SizedBox(height: 10),
                   _oauthButton(
                     label: 'الدخول بحساب قوقل',
-                    icon: Icons.g_mobiledata,
+                    leading: const _GoogleLogo(size: 19),
                     background: AppColors.background,
                     foreground: AppColors.text,
                     outlined: true,
+                    busy: _busyOf == 'google',
                     onTap: _googleSignIn,
                   ),
                   const SizedBox(height: 16),
@@ -432,6 +513,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _primaryButton({
     required String label,
+    required bool busy,
     required VoidCallback onTap,
   }) {
     return Material(
@@ -443,7 +525,7 @@ class _AuthScreenState extends State<AuthScreen> {
         child: Container(
           height: 50,
           alignment: Alignment.center,
-          child: _busy
+          child: busy
               ? const SizedBox(
                   width: 20,
                   height: 20,
@@ -467,9 +549,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _oauthButton({
     required String label,
-    required IconData icon,
+    required Widget leading,
     required Color background,
     required Color foreground,
+    required bool busy,
     required VoidCallback onTap,
     bool outlined = false,
   }) {
@@ -487,21 +570,30 @@ class _AuthScreenState extends State<AuthScreen> {
             border:
                 outlined ? Border.all(color: AppColors.border) : null,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 22, color: foreground),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: foreground,
+          child: busy
+              ? SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: foreground,
+                  ),
+                )
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    leading,
+                    const SizedBox(width: 9),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: foreground,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -536,4 +628,66 @@ class _AuthScreenState extends State<AuthScreen> {
       ),
     );
   }
+}
+
+/// شعار قوقل الرسمي بألوانه الأربعة — مرسوم بدقة
+class _GoogleLogo extends StatelessWidget {
+  const _GoogleLogo({this.size = 20});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _GoogleLogoPainter()),
+    );
+  }
+}
+
+class _GoogleLogoPainter extends CustomPainter {
+  static const _blue = Color(0xFF4285F4);
+  static const _green = Color(0xFF34A853);
+  static const _yellow = Color(0xFFFBBC05);
+  static const _red = Color(0xFFEA4335);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final sw = size.width * 0.22;
+    final rect = Rect.fromLTWH(
+      sw / 2,
+      sw / 2,
+      size.width - sw,
+      size.height - sw,
+    );
+
+    Paint stroke(Color c) => Paint()
+      ..color = c
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = sw;
+
+    double rad(double deg) => deg * math.pi / 180;
+
+    // من فجوة أعلى اليمين عكس عقارب الساعة:
+    // أحمر (الأعلى) ← أصفر (يسار-أسفل) ← أخضر (الأسفل) ← أزرق (يمين حتى الشريط)
+    canvas.drawArc(rect, rad(-45), rad(-135), false, stroke(_red));
+    canvas.drawArc(rect, rad(-180), rad(-45), false, stroke(_yellow));
+    canvas.drawArc(rect, rad(-225), rad(-90), false, stroke(_green));
+    canvas.drawArc(rect, rad(-315), rad(-45), false, stroke(_blue));
+
+    // شريط الـG الأفقي
+    canvas.drawRect(
+      Rect.fromLTWH(
+        size.width / 2,
+        size.height / 2 - sw / 2,
+        size.width / 2,
+        sw,
+      ),
+      Paint()..color = _blue,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }
