@@ -29,6 +29,23 @@
 		<string>ar</string>
 		<string>en</string>
 	</array>
+	<key>GIDClientID</key>
+	<string>349888852438-eq7nm9af5r56g65juu1c6i02p93ev4j2.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>349888852438-tkks5s0pflj14os58i0qd89qf0dftgpq.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>google-sign-in</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.349888852438-eq7nm9af5r56g65juu1c6i02p93ev4j2</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>يحتاج share للوصول إلى صورك لإرفاقها في منشوراتك وتعيين صورتك الشخصية.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
