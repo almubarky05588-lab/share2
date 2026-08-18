@@ -7,6 +7,12 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // استقبال الإشعارات وعرضها أثناء فتح التطبيق
+    if #available(iOS 10.0, *) {
+      UNUserNotificationCenter.current().delegate =
+        self as? UNUserNotificationCenterDelegate
+    }
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
