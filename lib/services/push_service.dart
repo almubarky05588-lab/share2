@@ -14,39 +14,46 @@ class PushService {
   final _local = FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
+  /// آخر حالة — للتشخيص من داخل التطبيق
+  String status = 'لم يبدأ';
+  String? lastToken;
+
   /// يُستدعى مرة واحدة عند إقلاع التطبيق
   Future<void> init() async {
     if (_ready) return;
 
     try {
       await Firebase.initializeApp();
+      status = 'Firebase جاهز';
     } catch (e) {
-      debugPrint('تعذّر تشغيل Firebase: $e');
+      status = 'فشل تشغيل Firebase: $e';
+      debugPrint(status);
       return;
     }
 
-    // إعداد عرض الإشعار داخل التطبيق
-    const settings = InitializationSettings(
-      iOS: DarwinInitializationSettings(
-        requestAlertPermission: false,
-        requestBadgePermission: false,
-        requestSoundPermission: false,
-      ),
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    );
+    try {
+      const settings = InitializationSettings(
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+        ),
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      );
 
-    await _local.initialize(settings);
+      await _local.initialize(settings);
 
-    // إشعار وصل والتطبيق مفتوح
-    FirebaseMessaging.onMessage.listen(_showLocal);
+      FirebaseMessaging.onMessage.listen(_showLocal);
+      FirebaseMessaging.instance.onTokenRefresh.listen(_saveToken);
 
-    // تجدّد التوكن
-    FirebaseMessaging.instance.onTokenRefresh.listen(_saveToken);
-
-    _ready = true;
+      _ready = true;
+    } catch (e) {
+      status = 'فشل تهيئة الإشعارات: $e';
+      debugPrint(status);
+    }
   }
 
-  /// يطلب إذن الإشعارات ويحفظ التوكن — بعد تسجيل الدخول
+  /// يطلب إذن الإشعارات ويحفظ التوكن
   Future<void> registerDevice() async {
     if (!_ready) await init();
     if (!_ready) return;
@@ -60,29 +67,51 @@ class PushService {
         sound: true,
       );
 
+      status = 'الإذن: ${settings.authorizationStatus.name}';
+
       if (settings.authorizationStatus == AuthorizationStatus.denied) {
+        status = 'الإشعارات مرفوضة من إعدادات الجهاز';
         return;
       }
 
-      // على iOS ننتظر توكن APNs قبل طلب توكن FCM
+      // على iOS ننتظر توكن APNs — قد يتأخر ثوانٍ
       if (Platform.isIOS) {
-        final apns = await messaging.getAPNSToken();
-        if (apns == null) {
-          await Future.delayed(const Duration(seconds: 3));
+        String? apns;
+        for (var i = 0; i < 10; i++) {
+          apns = await messaging.getAPNSToken();
+          if (apns != null) break;
+          await Future.delayed(const Duration(seconds: 2));
         }
+
+        if (apns == null) {
+          status = 'لم يصل توكن APNs من آبل';
+          return;
+        }
+        status = 'APNs جاهز';
       }
 
       final token = await messaging.getToken();
-      if (token != null) await _saveToken(token);
+      if (token == null) {
+        status = 'لم يصل توكن FCM';
+        return;
+      }
+
+      lastToken = token;
+      await _saveToken(token);
     } catch (e) {
-      debugPrint('تعذّر تسجيل الجهاز للإشعارات: $e');
+      status = 'خطأ: $e';
+      debugPrint(status);
     }
   }
 
   Future<void> _saveToken(String token) async {
     final client = Supabase.instance.client;
     final uid = client.auth.currentUser?.id;
-    if (uid == null) return;
+
+    if (uid == null) {
+      status = 'لا توجد جلسة — لم يُحفظ التوكن';
+      return;
+    }
 
     try {
       await client.from('device_tokens').upsert({
@@ -91,8 +120,10 @@ class PushService {
         'platform': Platform.isIOS ? 'ios' : 'android',
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
+      status = 'تم تسجيل الجهاز بنجاح ✅';
     } catch (e) {
-      debugPrint('تعذّر حفظ توكن الجهاز: $e');
+      status = 'فشل حفظ التوكن: $e';
+      debugPrint(status);
     }
   }
 
