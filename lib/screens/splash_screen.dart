@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../services/session_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/share_logo.dart';
 import 'app_shell.dart';
 import 'auth_screen.dart';
+import 'banned_screen.dart';
 
 /// شاشة البداية
 class SplashScreen extends StatefulWidget {
@@ -17,30 +19,36 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
-  Timer? _timer;
-
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(milliseconds: 1300), _go);
+    _start();
   }
 
-  void _go() {
+  Future<void> _start() async {
+    final minWait = Future.delayed(const Duration(milliseconds: 1300));
+
+    if (!SupabaseService.instance.isSignedIn) {
+      await minWait;
+      if (!mounted) return;
+      _to(const AuthScreen());
+      return;
+    }
+
+    // تسجيل الجلسة وفحص حالة الحساب معًا
+    final ban = await SessionService.instance.checkBan();
+    unawaited(SessionService.instance.recordLogin());
+
+    await minWait;
     if (!mounted) return;
 
-    final signedIn = SupabaseService.instance.isSignedIn;
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => signedIn ? const AppShell() : const AuthScreen(),
-      ),
-    );
+    _to(ban.banned ? BannedScreen(info: ban) : const AppShell());
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
+  void _to(Widget screen) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => screen),
+    );
   }
 
   @override
