@@ -116,11 +116,21 @@ class _AuthScreenState extends State<AuthScreen> {
       final client = Supabase.instance.client;
       final uid = client.auth.currentUser!.id;
 
-      await client.from('profiles').upsert({
-        'id': uid,
-        'name': name,
-        'handle': handle,
-      });
+      // الملف موجود سلفًا (ينشئه السيرفر تلقائيًا) — نحدّثه
+      final updated = await client
+          .from('profiles')
+          .update({'name': name, 'handle': handle})
+          .eq('id', uid)
+          .select('id');
+
+      // لم يوجد ملف — ننشئه
+      if (updated.isEmpty) {
+        await client.from('profiles').insert({
+          'id': uid,
+          'name': name,
+          'handle': handle,
+        });
+      }
 
       if (_avatar != null) {
         try {
@@ -135,9 +145,9 @@ class _AuthScreenState extends State<AuthScreen> {
     } on PostgrestException catch (e) {
       setState(() => _error = e.code == '23505'
           ? 'المعرّف مستخدم، جرّب غيره'
-          : 'تعذّر إنشاء الملف، حاول مرة أخرى');
+          : 'تعذّر حفظ البيانات، حاول مرة أخرى');
     } catch (_) {
-      setState(() => _error = 'تعذّر إنشاء الملف، حاول مرة أخرى');
+      setState(() => _error = 'تعذّر حفظ البيانات، حاول مرة أخرى');
     } finally {
       if (mounted) setState(() => _busyOf = null);
     }
