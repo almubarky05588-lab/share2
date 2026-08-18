@@ -1,8 +1,11 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/splash_screen.dart';
+import 'services/push_service.dart';
 import 'theme/app_theme.dart';
 
 /// مشروع Supabase الخاص بـ شارِك.
@@ -18,6 +21,12 @@ const supabaseAnonKey = String.fromEnvironment(
   defaultValue: 'sb_publishable_1x-ZykKSxiJDgVSKwyEhkg_G9yF4a9y',
 );
 
+/// إشعار وصل والتطبيق مغلق أو في الخلفية
+@pragma('vm:entry-point')
+Future<void> _backgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -25,6 +34,21 @@ Future<void> main() async {
     url: supabaseUrl,
     anonKey: supabaseAnonKey,
   );
+
+  await PushService.instance.init();
+  FirebaseMessaging.onBackgroundMessage(_backgroundHandler);
+
+  // يسجّل الجهاز مع كل جلسة دخول
+  Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+    if (state.session != null) {
+      PushService.instance.registerDevice();
+    }
+  });
+
+  // الجلسة قائمة أصلًا من فتحة سابقة
+  if (Supabase.instance.client.auth.currentUser != null) {
+    PushService.instance.registerDevice();
+  }
 
   runApp(const ShareApp());
 }
