@@ -24,6 +24,7 @@ class TimelineScreen extends StatefulWidget {
 }
 
 class TimelineScreenState extends State<TimelineScreen> {
+  /// 0 لك (مرتّب بالخوارزمية) · 1 الأحدث · 2 المتابَعون
   int _tab = 0;
 
   bool _loading = true;
@@ -54,8 +55,11 @@ class TimelineScreenState extends State<TimelineScreen> {
   }
 
   Future<void> _onNewPost() async {
+    // شريط «جديد» يظهر في التبويبات الزمنية فقط
+    if (_tab == 0) return;
+
     final n = await SupabaseService.instance
-        .countPostsSince(_lastLoaded, followingOnly: _tab == 1);
+        .countPostsSince(_lastLoaded, followingOnly: _tab == 2);
     if (!mounted || n <= 0) return;
     setState(() => _pending = n);
   }
@@ -81,8 +85,11 @@ class TimelineScreenState extends State<TimelineScreen> {
     });
 
     try {
-      final posts = await SupabaseService.instance
-          .fetchTimeline(followingOnly: _tab == 1);
+      final posts = _tab == 0
+          ? await SupabaseService.instance.fetchRankedTimeline()
+          : await SupabaseService.instance
+              .fetchTimeline(followingOnly: _tab == 2);
+
       if (!mounted) return;
       setState(() {
         _posts = posts;
@@ -111,7 +118,10 @@ class TimelineScreenState extends State<TimelineScreen> {
 
   void _switchTab(int index) {
     if (_tab == index) return;
-    setState(() => _tab = index);
+    setState(() {
+      _tab = index;
+      _pending = 0;
+    });
     _load();
   }
 
@@ -238,7 +248,7 @@ class TimelineScreenState extends State<TimelineScreen> {
           ? _messageList(_error!, retry: true)
           : _posts.isEmpty
               ? _messageList(
-                  _tab == 1
+                  _tab == 2
                       ? 'لا توجد منشورات ممن تتابعهم بعد'
                       : 'لا توجد منشورات بعد — اكتب أول منشور',
                 )
@@ -340,7 +350,8 @@ class TimelineScreenState extends State<TimelineScreen> {
       child: Row(
         children: [
           _tabItem(context, 'لك', 0),
-          _tabItem(context, 'المتابَعون', 1),
+          _tabItem(context, 'الأحدث', 1),
+          _tabItem(context, 'المتابَعون', 2),
         ],
       ),
     );
@@ -360,13 +371,14 @@ class TimelineScreenState extends State<TimelineScreen> {
               Text(
                 label,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontSize: 14.5,
                       fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                       color: active ? AppColors.text : AppColors.textMuted,
                     ),
               ),
               const SizedBox(height: 8),
               Container(
-                width: 46,
+                width: 42,
                 height: 3,
                 decoration: BoxDecoration(
                   color: active ? AppColors.brand : Colors.transparent,
