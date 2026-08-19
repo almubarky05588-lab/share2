@@ -52,6 +52,22 @@ class SupabaseService {
     await _db.auth.updateUser(UserAttributes(email: newEmail));
   }
 
+  /// تغيير كلمة المرور
+  Future<void> changePassword(String newPassword) async {
+    await _db.auth.updateUser(UserAttributes(password: newPassword));
+  }
+
+  /// إرسال رابط استعادة كلمة المرور
+  Future<void> sendPasswordReset(String email) async {
+    await _db.auth.resetPasswordForEmail(email.trim());
+  }
+
+  /// حذف الحساب نهائيًا
+  Future<void> deleteMyAccount() async {
+    await _db.rpc('delete_my_account');
+    await _db.auth.signOut();
+  }
+
   // ── قراءة المنشورات ──────────────────────────────────────
 
   Post _post(Map<String, dynamic> row) =>
@@ -76,6 +92,20 @@ class SupabaseService {
 
     final rows = await query.order('created_at', ascending: false).limit(50);
     return rows.map<Post>(_post).toList();
+  }
+
+  /// الخلاصة المرتّبة بالخوارزمية — الأفضل أولًا
+  Future<List<Post>> fetchRankedTimeline({int limit = 50}) async {
+    try {
+      final rows = await _db.rpc('ranked_feed', params: {'p_limit': limit});
+      return (rows as List)
+          .cast<Map<String, dynamic>>()
+          .map<Post>(_post)
+          .toList();
+    } catch (_) {
+      // تعذّر الترتيب — نرجع للزمني
+      return fetchTimeline();
+    }
   }
 
   /// بث حي لأي منشور جديد
@@ -297,6 +327,23 @@ class SupabaseService {
 
   Future<void> deletePost(String postId) async {
     await _db.from('posts').delete().eq('id', postId);
+  }
+
+  /// الإبلاغ عن محتوى أو مستخدم
+  Future<void> report({
+    required String targetType,
+    required String targetId,
+    String? reason,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) throw StateError('غير مسجّل الدخول');
+
+    await _db.from('reports').insert({
+      'reporter_id': uid,
+      'target_type': targetType,
+      'target_id': targetId,
+      'reason': reason,
+    });
   }
 
   String postLink(String postId) => 'https://share.sa/p/$postId';
