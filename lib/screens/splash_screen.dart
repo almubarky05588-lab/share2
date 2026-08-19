@@ -35,14 +35,14 @@ class _SplashScreenState extends State<SplashScreen> {
       return;
     }
 
-    // تسجيل الجلسة وفحص حالة الحساب معًا
-    final ban = await SessionService.instance.checkBan();
+    // فحص حالة الحساب: موقوف أو مجدول للحذف
+    final status = await SessionService.instance.checkStatus();
     unawaited(SessionService.instance.recordLogin());
 
     await minWait;
     if (!mounted) return;
 
-    _to(ban.banned ? BannedScreen(info: ban) : const AppShell());
+    _to(status.blocked ? BannedScreen(status: status) : const AppShell());
   }
 
   void _to(Widget screen) {
