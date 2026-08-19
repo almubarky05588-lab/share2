@@ -375,15 +375,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  /// حذف الحساب نهائيًا
+  /// حذف الحساب — مؤجّل ٣٠ يومًا مع إمكانية الاستعادة
   Future<void> _deleteAccount() async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('حذف الحساب'),
         content: const Text(
-          'سيُحذف حسابك ومنشوراتك ونزالاتك ورسائلك نهائيًا، '
-          'ولا يمكن التراجع عن هذا الإجراء.',
+          'سيُعطَّل حسابك فورًا ويختفي عن الجميع.\n\n'
+          'لديك ٣٠ يومًا لاستعادته بتسجيل الدخول مرة أخرى، '
+          'وبعدها يُحذف نهائيًا مع كل منشوراتك ونزالاتك.',
         ),
         actions: [
           TextButton(
@@ -401,7 +402,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     if (confirm != true || !mounted) return;
 
-    // تأكيد ثانٍ بكتابة كلمة
     final field = TextEditingController();
     final sure = await showDialog<bool>(
       context: context,
@@ -427,7 +427,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextButton(
             onPressed: () =>
                 Navigator.of(ctx).pop(field.text.trim() == 'حذف'),
-            child: const Text('حذف نهائيًا',
+            child: const Text('حذف الحساب',
                 style: TextStyle(color: AppColors.like)),
           ),
         ],
@@ -458,7 +458,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {
       if (!mounted) return;
       Navigator.of(context).pop();
-      _snack('تعذّر حذف الحساب، حاول لاحقًا');
+      _snack('تعذّر تنفيذ الطلب، حاول لاحقًا');
     }
   }
 
