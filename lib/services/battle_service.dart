@@ -24,6 +24,19 @@ class BattleService {
 
   // ── النزال ───────────────────────────────────────────────
 
+  /// هل يمكن تحدّي هذا المنشور؟ (يُقفل بعد أول نزال)
+  Future<bool> canChallengePost(String postId) async {
+    try {
+      final ok = await _db.rpc(
+        'post_can_be_challenged',
+        params: {'p_post': postId},
+      );
+      return ok == true;
+    } catch (_) {
+      return true;
+    }
+  }
+
   Future<void> challenge({
     required String opponentId,
     required String opponentText,
@@ -35,16 +48,23 @@ class BattleService {
     final uid = _uid;
     if (uid == null) throw StateError('غير مسجّل الدخول');
 
-    await _db.from('battles').insert({
-      'challenger_id': uid,
-      'opponent_id': opponentId,
-      'challenger_text': myText,
-      'opponent_text': opponentText,
-      'opponent_post_id': opponentPostId,
-      'topic': topic.key,
-      'duration_hours': durationHours,
-      'status': 'pending',
-    });
+    try {
+      await _db.from('battles').insert({
+        'challenger_id': uid,
+        'opponent_id': opponentId,
+        'challenger_text': myText,
+        'opponent_text': opponentText,
+        'opponent_post_id': opponentPostId,
+        'topic': topic.key,
+        'duration_hours': durationHours,
+        'status': 'pending',
+      });
+    } on PostgrestException catch (e) {
+      if (e.message.contains('POST_ALREADY_CHALLENGED')) {
+        throw StateError('هذا المنشور خاض نزالًا من قبل');
+      }
+      rethrow;
+    }
   }
 
   Future<void> accept(String battleId) async {
