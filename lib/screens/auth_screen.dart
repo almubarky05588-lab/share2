@@ -30,7 +30,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isSignUp = false;
 
-  /// أي زر مشغول الآن: email | apple | google | profile
+  /// أي زر مشغول الآن: email | apple | google | profile | reset
   String? _busyOf;
   bool get _busy => _busyOf != null;
 
@@ -118,14 +118,12 @@ class _AuthScreenState extends State<AuthScreen> {
       final client = Supabase.instance.client;
       final uid = client.auth.currentUser!.id;
 
-      // الملف موجود سلفًا (ينشئه السيرفر تلقائيًا) — نحدّثه
       final updated = await client
           .from('profiles')
           .update({'name': name, 'handle': handle})
           .eq('id', uid)
           .select('id');
 
-      // لم يوجد ملف — ننشئه
       if (updated.isEmpty) {
         await client.from('profiles').insert({
           'id': uid,
@@ -138,7 +136,7 @@ class _AuthScreenState extends State<AuthScreen> {
         try {
           await SupabaseService.instance.uploadAvatar(_avatar!);
         } catch (_) {
-          // الصورة اختيارية — لا نوقف الدخول لأجلها
+          // الصورة اختيارية
         }
       }
 
@@ -202,7 +200,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
       await _afterOAuth(suggestedName: name);
     } on SignInWithAppleAuthorizationException catch (e) {
-      // المستخدم أغلق النافذة — لا خطأ يعرض
       if (e.code != AuthorizationErrorCode.canceled) {
         setState(() => _error = 'تعذّر الدخول بآبل، حاول مرة أخرى');
       }
@@ -237,7 +234,6 @@ class _AuthScreenState extends State<AuthScreen> {
 
       final user = await googleSignIn.signIn();
       if (user == null) {
-        // المستخدم أغلق النافذة
         setState(() => _busyOf = null);
         return;
       }
@@ -262,6 +258,64 @@ class _AuthScreenState extends State<AuthScreen> {
       setState(() => _error = e.message);
     } catch (_) {
       setState(() => _error = 'تعذّر الدخول بقوقل، حاول مرة أخرى');
+    } finally {
+      if (mounted) setState(() => _busyOf = null);
+    }
+  }
+
+  /// استعادة كلمة المرور
+  Future<void> _forgotPassword() async {
+    final controller = TextEditingController(text: _email.text.trim());
+
+    final email = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('استعادة كلمة المرور'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'أدخل بريدك وسنرسل لك رابط إعادة تعيين كلمة المرور',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.emailAddress,
+              textDirection: TextDirection.ltr,
+              decoration:
+                  const InputDecoration(hintText: 'البريد الإلكتروني'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('إرسال'),
+          ),
+        ],
+      ),
+    );
+
+    if (email == null || email.isEmpty) return;
+
+    setState(() {
+      _busyOf = 'reset';
+      _error = null;
+    });
+
+    try {
+      await SupabaseService.instance.sendPasswordReset(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('أُرسل الرابط إلى $email')),
+      );
+    } catch (_) {
+      setState(() => _error = 'تعذّر الإرسال، تأكد من البريد');
     } finally {
       if (mounted) setState(() => _busyOf = null);
     }
@@ -361,7 +415,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 ),
                 const SizedBox(height: 26),
                 if (_needsProfile) ...[
-                  // صورة شخصية اختيارية
                   Center(
                     child: GestureDetector(
                       onTap: _busy ? null : _pickAvatar,
@@ -446,15 +499,31 @@ class _AuthScreenState extends State<AuthScreen> {
                     obscure: true,
                     textDirection: TextDirection.ltr,
                   ),
+                  if (!_isSignUp) ...[
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: _busy ? null : _forgotPassword,
+                        child: Text(
+                          'نسيت كلمة المرور؟',
+                          style: t.bodySmall?.copyWith(
+                            color: AppColors.brand,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   if (_error != null) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
                     Text(
                       _error!,
                       textAlign: TextAlign.center,
                       style: t.bodySmall?.copyWith(color: AppColors.like),
                     ),
                   ],
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 16),
                   _primaryButton(
                     label: _isSignUp ? 'إنشاء الحساب' : 'دخول',
                     busy: _busyOf == 'email',
@@ -642,7 +711,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
-/// شعار قوقل الرسمي بألوانه الأربعة — مرسوم بدقة
+/// شعار قوقل الرسمي بألوانه الأربعة
 class _GoogleLogo extends StatelessWidget {
   const _GoogleLogo({this.size = 20});
 
@@ -681,14 +750,11 @@ class _GoogleLogoPainter extends CustomPainter {
 
     double rad(double deg) => deg * math.pi / 180;
 
-    // من فجوة أعلى اليمين عكس عقارب الساعة:
-    // أحمر (الأعلى) ← أصفر (يسار-أسفل) ← أخضر (الأسفل) ← أزرق (يمين حتى الشريط)
     canvas.drawArc(rect, rad(-45), rad(-135), false, stroke(_red));
     canvas.drawArc(rect, rad(-180), rad(-45), false, stroke(_yellow));
     canvas.drawArc(rect, rad(-225), rad(-90), false, stroke(_green));
     canvas.drawArc(rect, rad(-315), rad(-45), false, stroke(_blue));
 
-    // شريط الـG الأفقي
     canvas.drawRect(
       Rect.fromLTWH(
         size.width / 2,
