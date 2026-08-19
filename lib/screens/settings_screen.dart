@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/user_profile.dart';
 import '../services/push_service.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/avatar_circle.dart';
+import 'auth_screen.dart';
 
 /// الإعدادات وتعديل الملف الشخصي
 class SettingsScreen extends StatefulWidget {
@@ -18,6 +20,12 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  /// روابط السياسات
+  static const _privacyUrl =
+      'https://share-admin-panel.netlify.app/privacy.html';
+  static const _termsUrl =
+      'https://share-admin-panel.netlify.app/terms.html';
+
   final _name = TextEditingController();
   final _handle = TextEditingController();
   final _bio = TextEditingController();
@@ -218,6 +226,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  /// تغيير كلمة المرور
+  Future<void> _changePassword() async {
+    final pass1 = TextEditingController();
+    final pass2 = TextEditingController();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تغيير كلمة المرور'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: pass1,
+              obscureText: true,
+              textDirection: TextDirection.ltr,
+              decoration:
+                  const InputDecoration(hintText: 'كلمة المرور الجديدة'),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: pass2,
+              obscureText: true,
+              textDirection: TextDirection.ltr,
+              decoration: const InputDecoration(hintText: 'أعد كتابتها'),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'يجب ألا تقل عن ٦ أحرف',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    if (pass1.text.length < 6) {
+      _snack('كلمة المرور قصيرة');
+      return;
+    }
+    if (pass1.text != pass2.text) {
+      _snack('الكلمتان غير متطابقتين');
+      return;
+    }
+
+    try {
+      await SupabaseService.instance.changePassword(pass1.text);
+      _snack('تم تغيير كلمة المرور');
+    } catch (_) {
+      _snack('تعذّر تغيير كلمة المرور');
+    }
+  }
+
   Future<void> _openBlocked() async {
     final blocked = await SupabaseService.instance.fetchBlockedUsers();
     if (!mounted) return;
@@ -296,8 +369,73 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// تشخيص الإشعارات — يعرض الحالة ويحاول التسجيل من جديد
-  Future<void> _pushDiagnose() async {
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  /// حذف الحساب نهائيًا
+  Future<void> _deleteAccount() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('حذف الحساب'),
+        content: const Text(
+          'سيُحذف حسابك ومنشوراتك ونزالاتك ورسائلك نهائيًا، '
+          'ولا يمكن التراجع عن هذا الإجراء.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('متابعة',
+                style: TextStyle(color: AppColors.like)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    // تأكيد ثانٍ بكتابة كلمة
+    final field = TextEditingController();
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('تأكيد أخير'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('اكتب كلمة «حذف» للتأكيد'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: field,
+              textAlign: TextAlign.center,
+              decoration: const InputDecoration(hintText: 'حذف'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('إلغاء'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(field.text.trim() == 'حذف'),
+            child: const Text('حذف نهائيًا',
+                style: TextStyle(color: AppColors.like)),
+          ),
+        ],
+      ),
+    );
+
+    if (sure != true || !mounted) return;
+
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -306,40 +444,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
 
-    await PushService.instance.registerDevice();
-    if (!mounted) return;
-    Navigator.of(context).pop();
+    try {
+      await PushService.instance.unregisterDevice();
+      await SupabaseService.instance.deleteMyAccount();
 
-    final s = PushService.instance.status;
-    final tk = PushService.instance.lastToken;
+      if (!mounted) return;
+      Navigator.of(context).pop();
 
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('حالة الإشعارات'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SelectableText(s, style: const TextStyle(fontSize: 14)),
-            if (tk != null) ...[
-              const SizedBox(height: 12),
-              const Text('التوكن:', style: TextStyle(fontSize: 12.5)),
-              SelectableText(
-                tk.length > 24 ? '${tk.substring(0, 24)}…' : tk,
-                style: const TextStyle(fontSize: 11.5),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('حسنًا'),
-          ),
-        ],
-      ),
-    );
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthScreen()),
+        (_) => false,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _snack('تعذّر حذف الحساب، حاول لاحقًا');
+    }
   }
 
   Future<void> _signOut() async {
@@ -453,6 +573,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                       const SizedBox(height: 26),
+
+                      // ── الحساب ──
+                      _sectionLabel(context, 'الحساب'),
                       const Divider(color: AppColors.border),
                       _rowItem(
                         context,
@@ -464,17 +587,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const Divider(color: AppColors.border),
                       _rowItem(
                         context,
-                        icon: Icons.block,
-                        label: 'الحسابات المحظورة',
-                        onTap: _openBlocked,
+                        icon: Icons.lock_outline,
+                        label: 'تغيير كلمة المرور',
+                        onTap: _changePassword,
                       ),
                       const Divider(color: AppColors.border),
                       _rowItem(
                         context,
-                        icon: Icons.notifications_active_outlined,
-                        label: 'فحص الإشعارات',
-                        onTap: _pushDiagnose,
+                        icon: Icons.block,
+                        label: 'الحسابات المحظورة',
+                        onTap: _openBlocked,
                       ),
+
+                      const SizedBox(height: 22),
+
+                      // ── عن التطبيق ──
+                      _sectionLabel(context, 'عن التطبيق'),
+                      const Divider(color: AppColors.border),
+                      _rowItem(
+                        context,
+                        icon: Icons.privacy_tip_outlined,
+                        label: 'سياسة الخصوصية',
+                        onTap: () => _openUrl(_privacyUrl),
+                      ),
+                      const Divider(color: AppColors.border),
+                      _rowItem(
+                        context,
+                        icon: Icons.description_outlined,
+                        label: 'شروط الاستخدام',
+                        onTap: () => _openUrl(_termsUrl),
+                      ),
+
+                      const SizedBox(height: 22),
+
+                      // ── مغادرة ──
                       const Divider(color: AppColors.border),
                       _rowItem(
                         context,
@@ -482,6 +628,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: 'تسجيل الخروج',
                         color: AppColors.like,
                         onTap: _signOut,
+                      ),
+                      const Divider(color: AppColors.border),
+                      _rowItem(
+                        context,
+                        icon: Icons.delete_forever_outlined,
+                        label: 'حذف الحساب',
+                        color: AppColors.like,
+                        onTap: _deleteAccount,
                       ),
                     ],
                   ),
@@ -578,6 +732,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(BuildContext context, String text) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 4, right: 2),
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textMuted,
+              ),
+        ),
       ),
     );
   }
