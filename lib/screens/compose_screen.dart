@@ -9,6 +9,7 @@ import '../models/post.dart';
 import '../models/spoil.dart';
 import '../models/user_profile.dart';
 import '../services/battle_service.dart';
+import '../services/profile_cache.dart';
 import '../services/supabase_service.dart';
 import '../theme/app_theme.dart';
 import '../theme/handle_text.dart';
@@ -39,7 +40,8 @@ class _ComposeScreenState extends State<ComposeScreen> {
   bool _isVideo = false;
   bool _sending = false;
 
-  UserProfile? _me;
+  /// يبدأ من الذاكرة المؤقتة — فتظهر صورتي فورًا بلا وميض
+  UserProfile? _me = ProfileCache.me;
 
   Jump? _wave;
   bool _useWave = false;
@@ -120,7 +122,7 @@ class _ComposeScreenState extends State<ComposeScreen> {
 
     if (!mounted) return;
     setState(() {
-      _me = me;
+      _me = me ?? _me;
       _wave = wave;
       _spoils = spoils;
     });
