@@ -350,7 +350,7 @@ extension SupabaseProfileApi on SupabaseService {
       hasBlockedMe = await blockedMe(userId);
     }
 
-    return UserProfile(
+    final profile = UserProfile(
       id: row['id'].toString(),
       name: row['name'] as String? ?? '',
       handle: row['handle'] as String? ?? '',
@@ -373,6 +373,11 @@ extension SupabaseProfileApi on SupabaseService {
       battlesWon: (row['battles_won'] as num?)?.toInt() ?? 0,
       isTester: row['is_tester'] as bool? ?? false,
     );
+
+    // حفظ ملفي في الذاكرة المؤقتة — يمنع وميض الصورة القديمة
+    if (me != null && me == userId) ProfileCache.save(profile);
+
+    return profile;
   }
 
   Future<UserProfile?> fetchMyProfile() async {
