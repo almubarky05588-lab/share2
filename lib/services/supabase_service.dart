@@ -8,6 +8,7 @@ import '../models/message.dart';
 import '../models/notification_item.dart';
 import '../models/post.dart';
 import '../models/user_profile.dart';
+import 'profile_cache.dart';
 
 part 'supabase_service_profile.dart';
 
@@ -43,10 +44,14 @@ class SupabaseService {
     required String email,
     required String password,
   }) async {
+    ProfileCache.clear();
     await _db.auth.signInWithPassword(email: email, password: password);
   }
 
-  Future<void> signOut() => _db.auth.signOut();
+  Future<void> signOut() async {
+    ProfileCache.clear();
+    await _db.auth.signOut();
+  }
 
   Future<void> changeEmail(String newEmail) async {
     await _db.auth.updateUser(UserAttributes(email: newEmail));
@@ -65,6 +70,7 @@ class SupabaseService {
   /// حذف الحساب نهائيًا
   Future<void> deleteMyAccount() async {
     await _db.rpc('delete_my_account');
+    ProfileCache.clear();
     await _db.auth.signOut();
   }
 
@@ -400,6 +406,11 @@ class SupabaseService {
 
     final url = _db.storage.from('avatars').getPublicUrl(path);
     await _db.from('profiles').update({'avatar_url': url}).eq('id', uid);
+
+    // تحديث الذاكرة المؤقتة فورًا
+    final cached = ProfileCache.me;
+    if (cached != null) ProfileCache.save(cached.copyWith(avatarUrl: url));
+
     return url;
   }
 
@@ -420,6 +431,10 @@ class SupabaseService {
 
     final url = _db.storage.from('avatars').getPublicUrl(path);
     await _db.from('profiles').update({'cover_url': url}).eq('id', uid);
+
+    final cached = ProfileCache.me;
+    if (cached != null) ProfileCache.save(cached.copyWith(coverUrl: url));
+
     return url;
   }
 
