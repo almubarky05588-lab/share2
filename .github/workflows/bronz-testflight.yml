@@ -49,10 +49,16 @@ jobs:
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = sa.almubarky.bronzApp;/PRODUCT_BUNDLE_IDENTIFIER = sa.almubarky.bronz;/g' ios/Runner.xcodeproj/project.pbxproj
           grep -n "PRODUCT_BUNDLE_IDENTIFIER" ios/Runner.xcodeproj/project.pbxproj
 
-      - name: تجهيز Flutter و Pods
+      - name: الأيقونة والشاشة الافتتاحية
         working-directory: bronz
         run: |
           flutter pub get
+          dart run flutter_launcher_icons
+          dart run flutter_native_splash:create
+
+      - name: تجهيز Flutter و Pods
+        working-directory: bronz
+        run: |
           cd ios && pod install --repo-update && cd ..
           flutter build ios --release --config-only --no-codesign
 
