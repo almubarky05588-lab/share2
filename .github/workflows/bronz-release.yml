@@ -1,0 +1,46 @@
+name: Bronz App Store
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: رفع برونز إلى App Store
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: سحب تطبيق برونز
+        uses: actions/checkout@v4
+        with:
+          repository: almubarky05588-lab/-bronz-app
+          path: bronz
+
+      - name: اختيار أحدث Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26* | sort -V | tail -1)/Contents/Developer" && xcodebuild -version
+
+      - name: تثبيت Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: تثبيت Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: تثبيت fastlane
+        run: gem install fastlane --no-document
+
+      - name: بناء وتصوير ورفع للمراجعة
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+          FASTLANE_SKIP_UPDATE_CHECK: 'true'
+        run: |
+          TOKEN=$(printf '%s' "$MATCH_GIT_TOKEN" | tr -d '[:space:]')
+          export MATCH_GIT_BASIC_AUTHORIZATION=$(printf '%s' "x-access-token:$TOKEN" | base64 | tr -d '[:space:]')
+          bash bronz/ci/release.sh $(( 500 + ${{ github.run_number }} ))
