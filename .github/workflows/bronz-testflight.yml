@@ -1,0 +1,138 @@
+name: Bronz TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bronz:
+    name: بناء برونز ورفعه إلى TestFlight
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: سحب تطبيق برونز
+        uses: actions/checkout@v4
+        with:
+          repository: almubarky05588-lab/-bronz-app
+          path: bronz
+
+      - name: اختيار أحدث Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_26* | sort -V | tail -1)/Contents/Developer" && xcodebuild -version
+
+      - name: فحص توكن مستودع الشهادات
+        env:
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+        run: |
+          TOKEN=$(printf '%s' "$MATCH_GIT_TOKEN" | tr -d '[:space:]')
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/almubarky05588-lab/share-certs)
+          echo "استجابة GitHub API: $CODE"
+          [ "$CODE" = "200" ] || { echo "❌ التوكن لا يصل للمستودع"; exit 1; }
+
+      - name: تثبيت Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: توليد مجلد iOS وضبط الهوية
+        working-directory: bronz
+        run: |
+          flutter create --org sa.almubarky --project-name bronz_app --platforms=ios .
+          BUILD=$(( 100 + ${{ github.run_number }} ))
+          sed -i '' -E "s/^version: (.*)\+.*/version: \1+$BUILD/" pubspec.yaml
+          P=ios/Runner/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName برونز" $P
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName برونز" $P
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" $P || true
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = sa.almubarky.bronzApp;/PRODUCT_BUNDLE_IDENTIFIER = sa.almubarky.bronz;/g' ios/Runner.xcodeproj/project.pbxproj
+          grep -n "PRODUCT_BUNDLE_IDENTIFIER" ios/Runner.xcodeproj/project.pbxproj
+
+      - name: تجهيز Flutter و Pods
+        working-directory: bronz
+        run: |
+          flutter pub get
+          cd ios && pod install --repo-update && cd ..
+          flutter build ios --release --config-only --no-codesign
+
+      - name: تثبيت Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      - name: تثبيت fastlane وكتابة إعداداته
+        working-directory: bronz/ios
+        run: |
+          gem install fastlane --no-document
+          mkdir -p fastlane
+          cat > fastlane/Fastfile <<'EOF'
+          default_platform(:ios)
+
+          platform :ios do
+            lane :beta do
+              setup_ci
+
+              api_key = app_store_connect_api_key(
+                key_id: ENV["APP_STORE_CONNECT_KEY_ID"],
+                issuer_id: ENV["APP_STORE_CONNECT_ISSUER_ID"],
+                key_content: ENV["APP_STORE_CONNECT_KEY"],
+                in_house: false
+              )
+
+              match(
+                type: "appstore",
+                api_key: api_key,
+                app_identifier: ["sa.almubarky.bronz"],
+                git_url: "https://github.com/almubarky05588-lab/share-certs",
+                storage_mode: "git",
+                git_branch: "main",
+                team_id: "5V6TC85KRL",
+                readonly: false
+              )
+
+              profile_name = ENV["sigh_sa.almubarky.bronz_appstore_profile-name"]
+
+              update_code_signing_settings(
+                path: "Runner.xcodeproj",
+                use_automatic_signing: false,
+                team_id: "5V6TC85KRL",
+                targets: ["Runner"],
+                code_sign_identity: "Apple Distribution",
+                bundle_identifier: "sa.almubarky.bronz",
+                profile_name: profile_name
+              )
+
+              build_app(
+                workspace: "Runner.xcworkspace",
+                scheme: "Runner",
+                configuration: "Release",
+                export_method: "app-store",
+                export_options: {
+                  provisioningProfiles: { "sa.almubarky.bronz" => profile_name }
+                }
+              )
+
+              upload_to_testflight(
+                api_key: api_key,
+                skip_waiting_for_build_processing: true,
+                distribute_external: false,
+                changelog: "نسخة اختبارية من برونز"
+              )
+            end
+          end
+          EOF
+
+      - name: الرفع إلى TestFlight
+        working-directory: bronz/ios
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+          FASTLANE_SKIP_UPDATE_CHECK: 'true'
+        run: |
+          TOKEN=$(printf '%s' "$MATCH_GIT_TOKEN" | tr -d '[:space:]')
+          export MATCH_GIT_BASIC_AUTHORIZATION=$(printf '%s' "x-access-token:$TOKEN" | base64 | tr -d '[:space:]')
+          fastlane beta
